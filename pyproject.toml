@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h4lat"
+version = "0.1.0"
+description = "Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)"
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
+authors = [{ name = "Emilio Taggi", email = "emilio.taggi@gmail.com" }]
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy",
+    "sympy",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+# Full feature set (operator construction, PDF output, plots, HDF5 I/O)
+full = [
+    "pylatex",
+    "ipython",
+    "matplotlib",
+    "gvar",
+    "h5py",
+    "pandas",
+    "tabulate",   # needed by pandas .to_markdown()
+]
+# Minimal extra for Jupyter notebook pretty-printing
+notebook = [
+    "ipython",
+]
+# HDF5 persistence
+hdf5 = [
+    "h5py",
+    "gvar",
+]
+# Operator analysis
+operators = [
+    "pandas",
+    "tabulate",
+    "gvar",
+    "h5py",
+    "ipython",
+]
+# Testing
+dev = [
+    "pytest",
+    "h4lat[full]",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"h4lat" = ["data/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# ---------------------------------------------------------------------------
+# Black — code formatter
+# ---------------------------------------------------------------------------
+[tool.black]
+line-length = 119
+# Keep existing single-quoted strings as-is
+skip-string-normalization = true
+
+# ---------------------------------------------------------------------------
+# Ruff — linter + import sorter
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 119
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (undefined names, unused imports/vars, …)
+    "I",   # isort — import ordering
+    "B",   # flake8-bugbear — common bug patterns
+]
+ignore = [
+    # Comment-style rules: the codebase uses ## banner headers and section
+    # dividers intentionally — do not flag or rewrite them.
+    "E265",  # block comment should start with '# '
+    "E266",  # too many leading '#' for block comment
+    # Line-length is enforced by Black; avoid double-reporting.
+    "E501",
+    # Ambiguous variable names — too strict for scientific/math code where
+    # single-letter names like `l`, `O` are standard notation.
+    "E741",
+    # Bugbear opinionated extras that are too noisy for scientific code.
+    "B905",  # zip() without strict=
+    "B006",  # mutable default argument — fine in many scientific contexts
+]
+
+[tool.ruff.lint.isort]
+# Keep stdlib / third-party / local sections separated by a blank line.
+force-sort-within-sections = false
+known-first-party = ["h4lat"]

@@ -1,0 +1,14 @@
+repos:
+  # Black: opinionated code formatter
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+
+  # Ruff: fast linter — import sorting (I), pyflakes (F), pycodestyle (E/W),
+  #        bugbear (B).  Auto-fixes safe issues; dangerous fixes require --unsafe-fixes.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.6
+    hooks:
+      - id: ruff
+        args: [--fix]
