@@ -17,6 +17,7 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+!examples/*.ipynb
 
 # Generated data (can be regenerated at runtime)
 cg_pdf/

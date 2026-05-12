@@ -64,6 +64,18 @@ pip install -e ".[full]"
 
 ---
 
+## Examples
+
+Jupyter notebooks with worked examples are provided in the [`examples/`](examples/) folder:
+
+| Notebook | Description |
+|----------|-------------|
+| [`quickstart.ipynb`](examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
+| [`operator_algebra.ipynb`](examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
+| [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Complete listing of every operator in the bundled database, organised by Dirac structure, number of indices, and H(4) irrep |
+
+---
+
 ## Quick start
 
 ### Tensor-product decomposition
@@ -163,8 +175,9 @@ print(f"K (numerical) = {K_val}")
 # --- Nested dict, keyed by (n, X) then (irrep, block) ---
 d = get_OperatorDict()
 
-# All 2-index vector operators in irrep (4,1), multiplicity block 1:
-ops_V2 = d[(2, 'V')][(4, 1), 1]
+# All 2-index vector operators in irrep (6,1), multiplicity block 1:
+# (4,1)⊗(4,1) decomposes into (1,1)⊕(3,1)⊕(6,1)⊕(6,3); (6,1) is the symmetric traceless piece.
+ops_V2 = d[(2, 'V')][(6, 1), 1]
 for op in ops_V2:
     print(f"  id={op.id}  symm={op.symm}  C={op.C}")
 
