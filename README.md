@@ -133,6 +133,53 @@ print("tr =", op.tr)       # Trace condition
 print("symm =", op.symm)   # Index symmetry
 ```
 
+### Loading operators from the bundled database
+
+The package ships with a pre-built operator database.  The two convenience
+getters below load it without any path configuration:
+
+```python
+from h4lat import get_OperatorList, get_OperatorDict
+
+# --- Flat list, sorted by operator id ---
+ops = get_OperatorList()
+
+print(f"Total operators in the bundled database: {len(ops)}")
+
+# Inspect the first operator
+op = ops[0]
+print(f"id={op.id}  X={op.X}  irrep={op.irrep}  block={op.block}")
+print(f"Kinematic factor K = {op.latex_K}")
+print(f"C-parity  = {op.C}")
+print(f"Trace     = {op.tr}")
+print(f"Symmetry  = {op.symm}")
+
+# Evaluate K numerically at given kinematics
+K_val = op.evaluate_K(m_value=0.939, E_value=1.0, p1_value=0.0, p2_value=0.0, p3_value=0.3)
+print(f"K (numerical) = {K_val}")
+```
+
+```python
+# --- Nested dict, keyed by (n, X) then (irrep, block) ---
+d = get_OperatorDict()
+
+# All 2-index vector operators in irrep (4,1), multiplicity block 1:
+ops_V2 = d[(2, 'V')][(4, 1), 1]
+for op in ops_V2:
+    print(f"  id={op.id}  symm={op.symm}  C={op.C}")
+
+# All 3-index axial operators in irrep (8,1), block 1:
+if (3, 'A') in d and ((8, 1), 1) in d[(3, 'A')]:
+    ops_A3 = d[(3, 'A')][(8, 1), 1]
+    print(f"Number of A3 operators in (8,1) block 1: {len(ops_A3)}")
+```
+
+Both functions are thin wrappers that call the more general
+`OperatorList_from_database` / `OperatorDict_from_database` with no arguments,
+so they always read from `OPERATOR_DATABASE` (the bundled path).  Pass an
+explicit path to the underlying functions if you have generated a custom
+database with `make_operator_database`.
+
 ### Building an operator database
 
 ```python

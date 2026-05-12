@@ -4,9 +4,14 @@ import numpy as np
 
 import h4lat
 from h4lat import (
+    OPERATOR_DATABASE,
+    OperatorDict_from_database,
+    OperatorList_from_database,
     cg_calc,
     char_table,
     class_orders,
+    get_OperatorDict,
+    get_OperatorList,
     get_multiplicities,
     irrep_dim,
     irrep_index,
@@ -194,3 +199,119 @@ def test_package_version():
 
 def test_public_api_present():
     pass
+
+
+# ---------------------------------------------------------------------------
+# get_OperatorList — bundled database convenience getter
+# ---------------------------------------------------------------------------
+
+
+def test_get_OperatorList_returns_nonempty_list():
+    """get_OperatorList() must return a non-empty list of Operator objects."""
+    ops = get_OperatorList()
+    # The bundled database ships with at least one operator.
+    assert isinstance(ops, list)
+    assert len(ops) > 0
+
+
+def test_get_OperatorList_sorted_by_id():
+    """Operators returned by get_OperatorList() must be sorted by ascending id."""
+    ops = get_OperatorList()
+    ids = [op.id for op in ops]
+    # Each id must be a positive integer and the list must be non-decreasing.
+    assert ids == sorted(ids)
+    assert all(isinstance(i, int) and i >= 1 for i in ids)
+
+
+def test_get_OperatorList_matches_OperatorList_from_database():
+    """get_OperatorList() and OperatorList_from_database() must return the same operators."""
+    ops_getter = get_OperatorList()
+    # Call the general function with no path so it also falls back to the bundled DB.
+    ops_direct = OperatorList_from_database()
+    assert len(ops_getter) == len(ops_direct)
+    # Check that id, Dirac structure, and irrep agree for every operator.
+    for a, b in zip(ops_getter, ops_direct):
+        assert a.id == b.id
+        assert a.X == b.X
+        assert a.irrep == b.irrep
+
+
+def test_get_OperatorList_matches_explicit_path():
+    """get_OperatorList() must agree with OperatorList_from_database(OPERATOR_DATABASE)."""
+    ops_explicit = OperatorList_from_database(OPERATOR_DATABASE)
+    ops_getter = get_OperatorList()
+    # Both should resolve to exactly the same set of operators.
+    assert len(ops_explicit) == len(ops_getter)
+    for a, b in zip(ops_explicit, ops_getter):
+        assert a.id == b.id
+
+
+def test_get_OperatorList_operator_attributes():
+    """Every operator returned by get_OperatorList() must have well-formed attributes."""
+    ops = get_OperatorList()
+    for op in ops:
+        # Dirac structure must be one of the three supported types.
+        assert op.X in ('V', 'A', 'T'), f"Unexpected X={op.X!r} for operator {op.id}"
+        # irrep must be a 2-tuple of positive integers.
+        assert isinstance(op.irrep, tuple) and len(op.irrep) == 2
+        assert all(isinstance(k, int) and k >= 1 for k in op.irrep)
+        # Block and column indices are 1-based positive integers.
+        assert isinstance(op.block, int) and op.block >= 1
+        assert isinstance(op.index_block, int) and op.index_block >= 1
+        # n is at least 2 (one Dirac index plus at least one derivative index).
+        assert op.n >= 2
+
+
+def test_get_OperatorList_in_public_api():
+    """get_OperatorList must appear in h4lat.__all__."""
+    assert "get_OperatorList" in h4lat.__all__
+
+
+# ---------------------------------------------------------------------------
+# get_OperatorDict — bundled database convenience getter
+# ---------------------------------------------------------------------------
+
+
+def test_get_OperatorDict_returns_nonempty_dict():
+    """get_OperatorDict() must return a non-empty dict."""
+    d = get_OperatorDict()
+    assert isinstance(d, dict)
+    assert len(d) > 0
+
+
+def test_get_OperatorDict_key_structure():
+    """Top-level keys of get_OperatorDict() must be (n, X) pairs with valid values."""
+    d = get_OperatorDict()
+    for key in d:
+        n, X = key
+        # n is the total number of Lorentz indices (≥ 2 for physical operators).
+        assert isinstance(n, int) and n >= 2, f"Unexpected n={n} in key {key}"
+        assert X in ('V', 'A', 'T'), f"Unexpected X={X!r} in key {key}"
+
+
+def test_get_OperatorDict_matches_OperatorDict_from_database():
+    """get_OperatorDict() must produce the same key structure as OperatorDict_from_database()."""
+    d_getter = get_OperatorDict()
+    d_direct = OperatorDict_from_database()
+    # Same top-level keys.
+    assert set(d_getter.keys()) == set(d_direct.keys())
+    # Same inner keys for every (n, X) group.
+    for key in d_getter:
+        assert set(d_getter[key].keys()) == set(d_direct[key].keys())
+
+
+def test_get_OperatorDict_contains_vector_operators():
+    """The bundled dict must contain 2-index vector operators, including the scalar channel."""
+    d = get_OperatorDict()
+    # (2, 'V') corresponds to the simplest V-type operators with one derivative.
+    assert (2, 'V') in d, "Missing (2, 'V') entry in operator dict"
+    # The product (4,1)⊗(4,1) decomposes into (1,1), (3,1), (6,1), (6,3).
+    # Check that the scalar channel (1,1) is present with block 1.
+    assert ((1, 1), 1) in d[(2, 'V')], "Missing (1,1), block 1 in V 2-index dict"
+    ops = d[(2, 'V')][(1, 1), 1]
+    assert isinstance(ops, list) and len(ops) > 0
+
+
+def test_get_OperatorDict_in_public_api():
+    """get_OperatorDict must appear in h4lat.__all__."""
+    assert "get_OperatorDict" in h4lat.__all__

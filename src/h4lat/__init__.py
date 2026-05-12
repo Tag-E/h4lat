@@ -45,6 +45,8 @@ from .moments_operator import (
     cg_remapping_T,
     decomposition_analysis,
     diracO_from_cgmat,
+    get_OperatorDict,
+    get_OperatorList,
     index_symm,
     index_symm_2exchange,
     index_symm_index_fixed,
@@ -87,6 +89,9 @@ __all__ = [
     "OperatorList_from_database",
     "OperatorDict_from_database",
     "Operator_from_database",
+    # Convenience getters for the bundled operator database
+    "get_OperatorList",
+    "get_OperatorDict",
     "cg_remapping",
     "cg_remapping_T",
     "symO_from_Cgmat",
