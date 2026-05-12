@@ -47,6 +47,7 @@ from .moments_operator import (
     diracO_from_cgmat,
     get_OperatorDict,
     get_OperatorList,
+    get_op_selection,
     index_symm,
     index_symm_2exchange,
     index_symm_index_fixed,
@@ -92,6 +93,7 @@ __all__ = [
     # Convenience getters for the bundled operator database
     "get_OperatorList",
     "get_OperatorDict",
+    "get_op_selection",
     "cg_remapping",
     "cg_remapping_T",
     "symO_from_Cgmat",

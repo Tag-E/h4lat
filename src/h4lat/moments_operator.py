@@ -999,6 +999,120 @@ def get_OperatorDict() -> dict:
     return OperatorDict_from_database()
 
 
+def get_op_selection(n_der: int) -> list[Operator]:
+    """Return a curated selection of operators for a given number of derivatives.
+
+    This function returns the standard set of operators used in the
+    moments-operator mixing analysis, loaded from the bundled database.
+    The operators are the irreducible H(4) representations relevant for
+    each dataset (1, 2, or 3 derivatives).
+
+    Parameters
+    ----------
+    n_der : int
+        Number of derivatives.  Must be 1, 2, or 3.
+
+    Returns
+    -------
+    list[Operator]
+        Ordered list: [opV1, opV2, ..., opA1, opA2, ..., opT1, opT2, ...]
+        For n_der=3 the list is [opV, opA].
+
+    Raises
+    ------
+    ValueError
+        If n_der is not 1, 2, or 3.
+    """
+    if n_der == 1:
+        # Vector
+        # irrep (3,1)
+        opV1 = 1/6 * Operator_from_database(2)                                              # = 11 + 22 + 33 - 3 * 44
+        opV2 = 1/(3 * np.sqrt(2)) * (Operator_from_database(2) - Operator_from_database(3)) # = 33 - 44
+        # irrep (6,3)
+        opV3 = 1/np.sqrt(2) * Operator_from_database(14)                                    # = 14 + 41
+
+        # Axial - irrep (6,4)
+        opA1 = 1/np.sqrt(2) * Operator_from_database(28) # = 13 + 31
+        opA2 = 1/np.sqrt(2) * Operator_from_database(32) # = 34 + 43
+
+        # Tensor
+        # irrep (8,1)
+        opT1 = Operator_from_database(42) - 1/2 * Operator_from_database(46)  # = 211 - 244
+        opT2 = - Operator_from_database(46)                                    # = 233 - 244
+        # irrep (8,2)
+        opT3 =  Operator_from_database(55) + 1/2 * Operator_from_database(51) # = 124 - 241
+        opT4 = 2 * Operator_from_database(55)
+
+        return [opV1, opV2, opV3, opA1, opA2, opT1, opT2, opT3, opT4]
+
+    if n_der == 2:
+        # Vector - irrep (4,2)
+        opV1 = Operator_from_database(73)  # = {2,3,4}      ( {}=symmetric combination )
+        opV2 = Operator_from_database(74)  # = {1,3,4}
+        opV3 = Operator_from_database(75)  # = {1,2,4}
+        opV4 = Operator_from_database(76)  # = {1,2,3}
+
+        # Axial - irrep (4,3)
+        opA1 = Operator_from_database(125) # = {2,3,4}
+        opA2 = Operator_from_database(126) # = {1,3,4}
+        opA3 = Operator_from_database(127) # = {1,2,4}
+        opA4 = Operator_from_database(128) # = {1,2,3}
+
+        # Tensor - irrep (3,2)
+        # (operators 197 and 198 cannot be used because their K is proportional to pz*(px-py),
+        #  and we have px=py in the 2-der dataset, and pz=0 in the 1-der one)
+        opT1 =  2 * Operator_from_database(199) # = 2x 1,2,{3,4} + 1,3,{2,4} + 1,4,{2,3} - 2,3,{1,4} - 2,4,{1,3}
+
+        # Tensor - irrep (3,3)
+        # (operator 202 cannot be used because it has K=0 always) (TO DO: look better into it to be sure)
+        opT2 =      Operator_from_database(200) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
+        opT3 = -2 * Operator_from_database(201) # = 2x 1,2,{1,2} + 1,3,{1,3} -3x 1,4,{1,4} - 2,3,{2,3} +3 2,4,{2,4}
+
+        # Tensor - irrep (6,2) (the block with C=-1)
+        opT4 =     Operator_from_database(233) + Operator_from_database(239)   # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
+        opT5 =     Operator_from_database(234) + Operator_from_database(240)   # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
+        opT6 = - ( Operator_from_database(235) + Operator_from_database(241) ) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
+        opT7 =     Operator_from_database(236) + Operator_from_database(242)   # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
+        opT8 = - ( Operator_from_database(237) + Operator_from_database(243) ) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
+        opT9 = - ( Operator_from_database(238) + Operator_from_database(244) ) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
+
+        # Set custom labels
+        opV1.id = "V1"; opV2.id = "V2"; opV3.id = "V3"; opV4.id = "V4"
+        opA1.id = "A1"; opA2.id = "A2"; opA3.id = "A3"; opA4.id = "A4"
+        opT1.id = "T1"; opT2.id = "T2"; opT3.id = "T3"; opT4.id = "T4"
+        opT5.id = "T5"; opT6.id = "T6"; opT7.id = "T7"; opT8.id = "T8"
+        opT9.id = "T9"
+
+        return [opV1, opV2, opV3, opV4, opA1, opA2, opA3, opA4,
+                opT1, opT2, opT3, opT4, opT5, opT6, opT7, opT8, opT9]
+
+    if n_der == 3:
+        # Construct the matrix corresponding to the completely symmetric combination of 4 indices
+        matrix = np.zeros((4, 4, 4, 4), dtype=float)
+        perms = np.array(list(it.permutations(range(4))))
+        matrix[tuple(perms.T)] = 1.0
+
+        # Vector - irrep (1,2)
+        opV = Operator(cgmat=matrix,         # = {1,2,3,4} (completely symmetric combination of 4 indices)
+                       id="V",
+                       X="V",
+                       irrep=(1, 2),
+                       block=1,
+                       index_block=1)
+
+        # Axial - irrep (1,3)
+        opA = Operator(cgmat=matrix,         # = {1,2,3,4} (completely symmetric combination of 4 indices)
+                       id="A",
+                       X="A",
+                       irrep=(1, 3),
+                       block=1,
+                       index_block=1)
+
+        return [opV, opA]
+
+    raise ValueError(f"n_der must be 1, 2, or 3, got {n_der}.")
+
+
 def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     """Convert the symbolic operator expression to a LaTeX-printable string.
 

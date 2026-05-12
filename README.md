@@ -73,6 +73,7 @@ Jupyter notebooks with worked examples are provided in the [`examples/`](example
 | [`quickstart.ipynb`](examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
 | [`operator_algebra.ipynb`](examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
 | [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Complete listing of every operator in the bundled database, organised by Dirac structure, number of indices, and H(4) irrep |
+| [`operators_mixing_free.ipynb`](examples/operators_mixing_free.ipynb) | Operators free of mixing with lower or equal dimensional operators, for 1 derivative ([arXiv:2401.05360](https://arxiv.org/abs/2401.05360)), 2 derivatives ([arXiv:2605.02808](https://arxiv.org/abs/2605.02808)), and 3 derivatives (work in preparation) |
 
 ---
 
@@ -192,6 +193,29 @@ Both functions are thin wrappers that call the more general
 so they always read from `OPERATOR_DATABASE` (the bundled path).  Pass an
 explicit path to the underlying functions if you have generated a custom
 database with `make_operator_database`.
+
+### Operators free of mixing
+
+`get_op_selection(n_der)` returns the curated set of H(4)-irreducible operators
+that are free of mixing with lower or equal dimensional operators, for a given
+number of derivatives.  These are the operators used in previous works:
+
+```python
+from h4lat import get_op_selection
+
+# 1 derivative: 3 vector + 2 axial + 4 tensor operators
+ops1 = get_op_selection(n_der=1)
+
+# 2 derivatives: 4 vector + 4 axial + 9 tensor operators
+ops2 = get_op_selection(n_der=2)
+
+# 3 derivatives: 1 vector + 1 axial operator
+ops3 = get_op_selection(n_der=3)
+
+for op in ops1:
+    print(f"id={op.id}  X={op.X}  irrep={op.irrep}  C={op.C}")
+    op.display()   # renders LaTeX in a Jupyter notebook
+```
 
 ### Building an operator database
 
