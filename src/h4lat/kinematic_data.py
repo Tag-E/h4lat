@@ -1,5 +1,5 @@
 ######################################################
-## kinematic_data.py  (h4lat package module)       ##
+## kinematic_data.py  (h4lat package module)        ##
 ## created by Emilio Taggi - 2025/01/31             ##
 ######################################################
 
@@ -22,12 +22,11 @@
 Kinematic data for nucleon matrix-element operators on the lattice.
 
 Contains:
-  - Dirac gamma matrices (γ₁–γ₄, γ₅) in the Euclidean DeGrand-Rossi
-    convention, satisfying {γ_μ, γ_ν} = 2δ_μν.
+  - Dirac gamma matrices (γ₁–γ₄, γ₅) in the Euclidean space,
+    satisfying {γ_μ, γ_ν} = 2δ_μν.
   - Symbolic Euclidean 4-momentum p_μ = (p₁, p₂, p₃, iE).
   - Polarisation projector Γ_pol for an unpolarised moving nucleon.
-  - Kinematic denominator den_K used by the Operator class
-    (see Göckeler et al. 1996, Phys. Rev. D 54, 5705).
+  - Kinematic denominator den_K used by the Operator class.
   - numerics_to_latex_conv: float → LaTeX string lookup table used
     when printing operator coefficients.
 """
@@ -42,7 +41,7 @@ from .utilities import is_square
 
 ######################## Gamma Structures ################################
 
-# Euclidean Dirac gamma matrices in the DeGrand-Rossi convention.
+# Euclidean Dirac gamma matrices.
 # The Euclidean metric is δ_μν (all positive), so {γ_μ, γ_ν} = 2δ_μν.
 # γ₁, γ₂, γ₃ are anti-Hermitian; γ₄ and γ₅ are Hermitian.
 
@@ -88,11 +87,8 @@ p_mu = [p1, p2, p3, I * E]
 pslash = np.einsum('ijk,i->jk', gamma_mu, p_mu)
 pslash_s = sym.Symbol(r"\cancel{p}")
 
-# Denominator of the kinematic normalisation factor K
-# (eq. (A.3) of Göckeler et al. 1996, arXiv:hep-lat/9602029):
-#   den_K = 2E Tr[Γ_pol (−i /p + m_N)].
-# K appears in the definition of reduced matrix elements via the OPE and
-# is used by the Operator class to normalise lattice three-point functions.
+# Denominator of the kinematic normalisation factor K:
+#   den_K = 2E Tr[Γ_pol (−i p_slash + m_N)].
 den_K = 2 * E * sym.trace(Gamma_pol * (-I * pslash + mN * Id_4)).simplify(rational=True)
 
 

@@ -1,13 +1,33 @@
+######################################################
+## moments_operator.py  (h4lat package module)      ##
+## created by Emilio Taggi - 2025/01/15             ##
+######################################################
+
+#########################################################################
+# This program is free software: you can redistribute it and/or modify  #
+# it under the terms of the GNU General Public License as published by  #
+# the Free Software Foundation, either version 3 of the License, or     #
+# (at your option) any later version.                                   #
+#                                                                       #
+# This program is distributed in the hope that it will be useful,       #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of        #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         #
+# GNU General Public License for more details.                          #
+#                                                                       #
+# You should have received a copy of the GNU General Public License     #
+# along with this program.  If not, see <http://www.gnu.org/licenses/>. #
+#########################################################################
+
 """
 moments_operator.py — lattice moments operators built from H(4) CG coefficients.
 
 An ``Operator`` object represents a single irreducible lattice operator of the form
 
-    O^X_{μ₁ μ₂ … μₙ}  =  Σ_{i₁,…,iₙ} c_{i₁…iₙ}  Γ^X_{i₁}  ∂_{i₂} … ∂_{iₙ}
+    O^X_{μ₁ μ₂ … μₙ}  =  Σ_{i₁,…,iₙ} c_{i₁…iₙ}  Γ^X_{i₁}  D_{i₂} … D_{iₙ}
 
 where Γ^X is the Dirac structure (V: γ_μ, A: γ_μ γ₅, T: σ_{μν}), the c_{i₁…iₙ}
-are Clebsch-Gordan coefficients stored in ``cgmat``, and the derivatives supply
-copies of the four-momentum p_μ at tree level.
+are Clebsch-Gordan coefficients stored in ``cgmat``, and the derivatives D are 
+left minus right acting covariant derivatives.
 
 The kinematic factor K(p, m) is the ratio of the tree-level three-point correlator
 to its kinematic prefactor, allowing lattice matrix elements to be normalised to
@@ -715,6 +735,8 @@ def cg_remapping_T(raw_cg: np.ndarray, n: int) -> np.ndarray:
     ndarray, shape (4,)*(n+1)
     """
     cg_remapped = np.zeros(shape=(4,) * (n + 1))
+    # The order of the 6 indipendent combinations is fixed by the
+    # choice of matrix representation for the irrep (6,1) of H(4)
     for k, ij in enumerate(["12", "13", "23", "14", "24", "34"]):
         i = int(ij[0]) - 1
         j = int(ij[1]) - 1

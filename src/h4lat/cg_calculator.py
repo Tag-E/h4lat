@@ -1,6 +1,6 @@
 ######################################################
-## cg_calculator.py  (h4lat package module)        ##
-## originally cgh4_calculator.py                   ##
+## cg_calculator.py  (h4lat package module)         ##
+## originally cgh4_calculator.py                    ##
 ## created by Emilio Taggi - 2024/12/09             ##
 ######################################################
 
@@ -30,7 +30,7 @@ dimension; this labelling follows Baake et al. (1982) [J. Math. Phys. 23, 944].
 CG coefficients are computed via the projection formula of Sakata (1974)
 [J. Math. Phys. 15, 1702]: summing the tensor-product matrices against the
 target irrep matrices over all group elements extracts the CG vectors
-symbolically.  The resulting free parameters (gauge freedom within degenerate
+symbolically.  The resulting free parameters (freedom within degenerate
 subspaces) are fixed by the prescription in CGmat_from_block.
 
 Main entry point: cg_calc.
@@ -641,7 +641,7 @@ class cg_calc:
             # copy in the decomposition), and A is a symbolic dim×dim matrix.
             # After summation, each column of res_mat is a linear form in the
             # A_{ij}; the coefficients are the CG matrix entries, with the
-            # A_{ij} labelling the remaining gauge freedom.
+            # A_{ij} labelling the remaining freedom.
             for ih in tqdm(range(self.n_ele_h4)):
                 time_before_construction = time.time()
 
@@ -948,9 +948,9 @@ def CGmat_from_block(block: np.ndarray, m: int = 0, mul: int = 1, gram_schmidt: 
     Notes
     -----
     The symbolic block from the projection formula contains one or more free
-    sympy monomials A_{ij} (the gauge freedom within degenerate subspaces).
-    The gauge is fixed by setting one monomial to 1 and the rest to 0.  For
-    multiplicity 1, the monomial appearing in the most rows is chosen
+    sympy monomials A_{ij} (the freedom within degenerate subspaces).
+    The degeneracy is resolved by setting one monomial to 1 and the rest to 0.
+    For multiplicity 1, the monomial appearing in the most rows is chosen
     (maximally constrained selection).  For multiplicity > 1, a mode-based
     rule distributes the degrees of freedom evenly across the mul copies.
     Each column is subsequently normalised so its leading non-zero entry is +1.
