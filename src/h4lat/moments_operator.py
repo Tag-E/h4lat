@@ -171,7 +171,7 @@ class Operator:
 
         # Discrete symmetry properties.
         self.C = C_parity(cgmat, X)
-        self.tr = trace_symm(cgmat)
+        self.tr = trace_symm(cgmat = cgmat, X = X)
         self.symm = index_symm(cgmat)
         if X == 'T':
             # For tensorial operators the first two indices carry σ_{μν}, which
@@ -513,19 +513,47 @@ def Kfactor_from_diracO(operator: sym.core.add.Add) -> sym.core.mul.Mul:
     )
 
 
-def trace_symm(cgmat: np.ndarray) -> str:
+def trace_symm(cgmat: np.ndarray, X: str) -> str:
     """Return ``'= 0'`` or ``'!= 0'`` indicating whether Tr[cgmat] vanishes.
+
+    The trace vanishes only if it is zero for every pair of distinct axes.
 
     Parameters
     ----------
     cgmat : ndarray
+    X : str
 
     Returns
     -------
     str
     """
-    tr = np.trace(cgmat)
-    return "= 0" if tr.all() == 0 else "!= 0"
+    n = cgmat.ndim
+    if X != 'T':
+        for axis1 in range(n):
+            for axis2 in range(axis1 + 1, n):
+                tr = np.trace(cgmat, axis1=axis1, axis2=axis2)
+                if not np.allclose(tr, 0):
+                    return "!= 0"
+        return "= 0"
+    else:
+        # For tensor operators the first two indices carry σ_{μν}, which is antisymmetric.
+        # The trace over those two indices vanishes by construction, and there is one
+        # less trace we have to check.
+        # See https://arxiv.org/pdf/hep-ph/0609231 eqs. 2.7-2.8
+        # (To compute the trace the antisymmetrization of the first two indices has to
+        # be made explicit)
+        cgmat = cgmat - cgmat.swapaxes(0, 1)
+        axis1 = 0
+        for axis2 in range(2, n):
+            tr = np.trace(cgmat, axis1=axis1, axis2=axis2)
+            if not np.allclose(tr, 0):
+                return "!= 0"
+        for axis1 in range(1, n):
+            for axis2 in range(axis1 + 1, n):
+                tr = np.trace(cgmat, axis1=axis1, axis2=axis2)
+                if not np.allclose(tr, 0):
+                    return "!= 0"
+        return "= 0"
 
 
 def C_parity(cgmat: np.ndarray, X: str) -> int | str:
