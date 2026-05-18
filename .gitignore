@@ -21,7 +21,14 @@ env/
 
 # Generated data (can be regenerated at runtime)
 cg_pdf/
+cg_database/
+h4_ele/
 operator_database/
+
+# Keep the bundled databases in the package data folder
+!src/h4lat/data/cg_database/
+!src/h4lat/data/h4_ele/
+!src/h4lat/data/operator_database/
 
 # Claude Code session data
 .claude/
