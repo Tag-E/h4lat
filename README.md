@@ -75,6 +75,8 @@ Jupyter notebooks with worked examples are provided in the [`examples/`](example
 | [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Complete listing of every operator in the bundled database, organised by Dirac structure, number of indices, and H(4) irrep |
 | [`operators_mixing_free.ipynb`](examples/operators_mixing_free.ipynb) | Operators free of mixing with lower or equal dimensional operators, for 1 derivative ([arXiv:2401.05360](https://arxiv.org/abs/2401.05360)), 2 derivatives ([arXiv:2605.02808](https://arxiv.org/abs/2605.02808)), and 3 derivatives (work in preparation) |
 
+A Google Colab notebook with some minimal working examples can be found [here](https://colab.research.google.com/drive/1KFnE0hi4XDNyo2Kg8iDKSSEqY1YQkPGZ?usp=sharing).
+
 ---
 
 ## Quick start
