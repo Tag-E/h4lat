@@ -24,6 +24,7 @@ cg_pdf/
 cg_database/
 h4_ele/
 operator_database/
+operator_catalogue.pdf
 
 # Keep the bundled databases in the package data folder
 !src/h4lat/data/cg_database/

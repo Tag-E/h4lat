@@ -40,7 +40,9 @@ Reference:
 """
 
 import itertools as it
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Self
 
@@ -70,6 +72,14 @@ try:
     _GVAR_AVAILABLE = True
 except ImportError:
     _GVAR_AVAILABLE = False
+
+try:
+    from pylatex import Alignat, Command, Document, Section, Subsection
+    from pylatex.utils import NoEscape
+
+    _PYLATEX_AVAILABLE = True
+except ImportError:
+    _PYLATEX_AVAILABLE = False
 
 try:
     import h5py  # noqa: F401 — guard import; availability flag used downstream
@@ -1305,6 +1315,193 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     return df
 
 
+################## PDF Catalogue ################
+
+
+def operator_show(
+    operator_database: str | None = None,
+    title: str | None = None,
+    author: str = "E.T.",
+    doc_name: str | None = None,
+    verbose: bool = False,
+    show: bool = True,
+    remove_pdf: bool = False,
+    clean_tex: bool = True,
+) -> None:
+    """Produce a PDF catalogue of all operators in *operator_database* and,
+    optionally, open it on screen.
+
+    The catalogue is organised by Dirac structure *X* and index count *n*.
+    Each section covers one (X, n) combination; each subsection covers one
+    H(4) irrep / multiplicity block and lists every operator with its
+    symbolic expression and kinematic factor.
+
+    Parameters
+    ----------
+    operator_database : str, optional
+        Path to an operator database directory produced by
+        :func:`make_operator_database`.  When *None* the bundled dataset
+        shipped with the package is used.
+    title : str, optional
+        Title printed on the first page of the PDF.  Defaults to a string
+        reporting the maximum *n* found in the database.
+    author : str, optional
+        Author string printed on the title page (default ``"E.T."``).
+    doc_name : str, optional
+        Base name (without extension) for the generated ``.tex`` / ``.pdf``
+        files.  Defaults to ``"operator_catalogue"``.
+    verbose : bool, optional
+        Print progress messages to stdout (default ``False``).
+    show : bool, optional
+        Open the PDF with ``xdg-open`` after generation (default ``True``).
+    remove_pdf : bool, optional
+        Delete the PDF file after showing it — useful when the user only
+        needs a one-off preview (default ``False``).
+    clean_tex : bool, optional
+        Remove the intermediate ``.tex`` and auxiliary LaTeX files after PDF
+        generation (default ``True``).
+
+    Returns
+    -------
+    None
+    """
+
+    # pylatex is an optional dependency; raise a helpful error if missing
+    if not _PYLATEX_AVAILABLE:
+        raise ImportError(
+            "pylatex is required for operator_show(). "
+            "Install it with: pip install pylatex"
+        )
+
+    # Build the nested operators dict from the chosen (or default) database.
+    # OperatorDict_from_database falls back to _BUNDLED_OPERATOR_DATABASE when
+    # operator_database is None, so no special-casing is needed here.
+    operators_dict = OperatorDict_from_database(operator_database)
+
+    # Derive the default title from the highest n found in the database
+    if title is None:
+        max_n_der = max(n-1 if X!='T' else n-2 for n, X in operators_dict.keys())
+        title = f"Available Operators (with up to {max_n_der} derivatives)"
+
+    # Set the default document / file base name
+    if doc_name is None:
+        doc_name = "operator_catalogue"
+
+    # The PDF file that will be produced on disk
+    file_name = f"{doc_name}.pdf"
+
+    # Instantiate the LaTeX document
+    doc = Document(
+        default_filepath=f'{doc_name}.tex',
+        documentclass='article',
+        page_numbers=False,
+    )
+
+    # Build the document preamble (title, author, date)
+    doc.preamble.append(Command("title", title))
+    doc.preamble.append(Command("author", author))
+    doc.preamble.append(Command("date", NoEscape(r"\today")))
+    doc.append(NoEscape(r"\maketitle"))
+    doc.append(NoEscape(r"\newpage"))
+
+    # Use a smaller font so that long operator expressions fit on one line
+    doc.append(Command('fontsize', arguments=['8', '12']))
+
+    # Loop over all (n, X) keys to build one LaTeX section per combination
+    for n, X in operators_dict.keys():
+
+        # Section title shows the shared Dirac structure and index count
+        section = Section(f"X={X}, n={n}", numbering=False)
+
+        # Loop over the irrep / multiplicity-block sub-keys within this (n, X)
+        for irrep, imul in operators_dict[(n, X)].keys():
+
+            # Collect per-operator properties to determine the block-wide value
+            # (or flag it as 'mixed' when operators in the block disagree)
+            C_list    = [op.C    for op in operators_dict[(n, X)][(irrep, imul)]]
+            tr_list   = [op.tr   for op in operators_dict[(n, X)][(irrep, imul)]]
+            symm_list = [op.symm for op in operators_dict[(n, X)][(irrep, imul)]]
+
+            # If every operator shares the same value use it; otherwise mark 'mixed'
+            C    = C_list[0]    if all_equal(C_list)    else 'mixed'
+            tr   = tr_list[0]   if all_equal(tr_list)   else 'mixed'
+            symm = symm_list[0] if all_equal(symm_list) else 'Mixed Symmetry'
+
+            # Subsection title encodes the irrep, block index, and shared symmetries
+            subsection = Subsection(
+                f"{irrep} Block {imul}: C = {C}, Trace {tr}, {symm} ",
+                numbering=False,
+            )
+
+            # One alignat environment holds all operator / kinematic-factor rows
+            agn = Alignat(numbering=False, escape=False)
+
+            # Append each operator in the block to the math environment
+            for op in operators_dict[(n, X)][(irrep, imul)]:
+
+                # Label row: the operator's integer id
+                agn.append(r"\text{Operator " + str(op.id) + r"}&\\")
+
+                # Operator expression row
+                agn.append(
+                    r"\!"*20
+                    + r" O_{}^{} &= {} \\".format(
+                        op.index_block,
+                        '{' + f"{X}{irrep},{imul}" + '}',
+                        op,
+                    )
+                )
+
+                # Kinematic factor row (triple backslash gives extra vertical space)
+                agn.append(
+                    r"\!"*20
+                    + r" K_{}^{} &= {} \\\\\\".format(
+                        op.index_block,
+                        '{' + f"{X}{irrep},{imul}" + '}',
+                        op.latex_K,
+                    )
+                )
+
+            # Attach the math block to the subsection, then the subsection to the section
+            subsection.append(agn)
+            section.append(subsection)
+
+        # Attach the completed section and start a new page
+        doc.append(section)
+        doc.append(NoEscape(r"\newpage"))
+
+    # --- PDF generation ---
+
+    if verbose:
+        print("\nGenerating the operators catalogue ...\n")
+
+    # Compile the LaTeX source; clean_tex controls removal of auxiliary files
+    doc.generate_pdf(doc_name, clean_tex=clean_tex)
+
+    if verbose:
+        print("\nOperators catalogue generated\n")
+
+    # --- Optional on-screen display ---
+
+    if show:
+        # Open the PDF with the system's default viewer
+        subprocess.call(["xdg-open", file_name])
+        # Brief pause so the viewer has time to render before a potential deletion
+        time.sleep(1.5)
+        if verbose:
+            print("\nOperators catalogue shown\n")
+
+    # --- Optional cleanup ---
+
+    if remove_pdf:
+        # Delete the PDF from disk
+        Path(file_name).unlink()
+        if verbose:
+            print("\nOperators catalogue removed from the device\n")
+    elif verbose:
+        print(f"\nOperators catalogue available in {file_name}\n")
+
+
 ################## HDF5 I/O #####################
 
 
@@ -1383,7 +1580,9 @@ def read_operator(group) -> Operator:
 ###################### Execution as Main ############################
 
 if __name__ == "__main__":
-    max_n = 2
+    # Default to max_n=3, matching the bundled operator database shipped with the package.
+    # Override by passing an integer as the first CLI argument: python moments_operator.py 4
+    max_n = 3
     if len(sys.argv) > 1:
         try:
             max_n = int(sys.argv[1])
