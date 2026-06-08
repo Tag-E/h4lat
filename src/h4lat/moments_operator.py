@@ -94,6 +94,7 @@ from .cg_calculator import (
     get_multiplicities,
     irrep_index,
     rep_label_list,
+    rep_latex_names,
 )
 from .kinematic_data import (
     E,
@@ -1236,7 +1237,84 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     return latex_str
 
 
-def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None, verbose: bool = False):
+def irrep_count_table(n_der: int, split: bool = False) -> None:
+    """Print a table of cumulative irrep counts across all starting structures.
+
+    For each of the 20 H(4) irreps lists:
+
+    * **Label** — LaTeX name of the irrep.
+    * **Count** — cumulative number of appearances summed over all five starting
+      irreps ``{(1,1), (1,4), (4,1), (4,4), (6,1)}`` from 0 derivatives up to
+      and including *n_der*.
+    * **Diff**  — the count added specifically at the *n_der* level (i.e.
+      Count(*n_der*) − Count(*n_der* − 1)).  Blank when zero.
+
+    Parameters
+    ----------
+    n_der : int
+        Number of derivatives.
+    split : bool
+        If ``False`` (default) print a single 3-column table with all 20 irreps.
+        If ``True`` split the 20 irreps into two groups of 10 and print them
+        side by side as a 6-column table.
+    """
+    V = (4, 1)
+    starting_irreps = [(1, 1), (1, 4), (4, 1), (4, 4), (6, 1)]
+    n_irreps = len(rep_label_list)
+
+    def _count_at_level(k: int) -> list[int]:
+        c = [0] * n_irreps
+        for si in starting_irreps:
+            mults = get_multiplicities(*(si,) + (V,) * k)
+            for i in range(n_irreps):
+                c[i] += mults[i]
+        return c
+
+    # Cumulative count up to n_der
+    counts = [0] * n_irreps
+    for k in range(n_der + 1):
+        for i, v in enumerate(_count_at_level(k)):
+            counts[i] += v
+
+    # Diff = count added specifically at this level
+    diff = _count_at_level(n_der)
+
+    def _diff_str(d: int) -> str:
+        return f"+{d}" if d > 0 else (str(d) if d < 0 else "")
+
+    col_w = max(len(name) for name in rep_latex_names) + 2
+    print(f"\nIrrep count table for n_der = {n_der}:\n")
+
+    if not split:
+        header = f"{'Label':<{col_w}} {'Count':>5}  {'Diff':>5}"
+        sep = "-" * len(header)
+        print(sep)
+        print(header)
+        print(sep)
+        for i, label in enumerate(rep_latex_names):
+            print(f"{label:<{col_w}} {counts[i]:>5}  {_diff_str(diff[i]):>5}")
+        print(sep)
+    else:
+        half = n_irreps // 2
+        gap = "    "
+        col_block = f"{'Label':<{col_w}} {'Count':>5}  {'Diff':>5}"
+        header = col_block + gap + col_block
+        sep = "-" * len(header)
+        print(sep)
+        print(header)
+        print(sep)
+        for row in range(half):
+            left  = row
+            right = row + half
+            l_label, l_count, l_diff = rep_latex_names[left],  counts[left],  diff[left]
+            r_label, r_count, r_diff = rep_latex_names[right], counts[right], diff[right]
+            left_col  = f"{l_label:<{col_w}} {l_count:>5}  {_diff_str(l_diff):>5}"
+            right_col = f"{r_label:<{col_w}} {r_count:>5}  {_diff_str(r_diff):>5}"
+            print(left_col + gap + right_col)
+        print(sep)
+
+
+def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None, verbose: bool = False, print_count_table: bool = False):
     """Analyse the irrep content of the tensor product irrep(X) ⊗ (4,1)^{n_der}.
 
     For each irrep appearing in the decomposition the function reports:
@@ -1260,6 +1338,9 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
         the index-symmetry of the operators.
     verbose : bool
         Print the analysis table to stdout.
+    print_count_table : bool
+        If True, call :func:`irrep_count_table` with the default (3-column)
+        layout after printing the analysis.
 
     Returns
     -------
@@ -1311,6 +1392,9 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     if verbose:
         print(f"\nAnalysis of { ' x '.join(str(e) for e in (starting_irrep + (V,) * n_der)) } :\n")
         print("\n".join("|" + "|".join(row.split("|")[2:]) for row in df.to_markdown().split("\n")))
+
+    if print_count_table:
+        irrep_count_table(n_der)
 
     return df
 
