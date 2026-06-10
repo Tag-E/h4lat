@@ -25,7 +25,7 @@ An ``Operator`` object represents a single irreducible lattice operator of the f
 
     O^X_{μ₁ μ₂ … μₙ}  =  Σ_{i₁,…,iₙ} c_{i₁…iₙ}  Γ^X_{i₁}  D_{i₂} … D_{iₙ}
 
-where Γ^X is the Dirac structure (V: γ_μ, A: γ_μ γ₅, T: σ_{μν}), the c_{i₁…iₙ}
+where Γ^X is the Dirac structure (V: γ_μ, A: γ_μ γ₅, T: σ_{μν}, S: 𝟙, P: γ₅), the c_{i₁…iₙ}
 are Clebsch-Gordan coefficients stored in ``cgmat``, and the derivatives D are 
 left minus right acting covariant derivatives.
 
@@ -154,7 +154,8 @@ class Operator:
             Operator identifier (used in filenames and catalogues).
         X : str
             Dirac structure: ``'V'`` (vector γ_μ), ``'A'`` (axial γ_μγ₅),
-            or ``'T'`` (tensor σ_{μν} = i/2 [γ_μ, γ_ν]).
+            ``'T'`` (tensor σ_{μν} = i/2 [γ_μ, γ_ν]), ``'S'`` (scalar 𝟙),
+            or ``'P'`` (pseudoscalar γ₅).
         irrep : tuple[int,int] or None
             H(4) irrep label, e.g. ``(4,1)``.
         block : int or None
@@ -169,12 +170,15 @@ class Operator:
         self.block = block
         self.index_block = index_block
 
-        # Number of Lorentz indices; number of derivatives is one less for V/A,
-        # two less for T (which carries two Dirac indices for σ_{μν}).
+        # Number of Lorentz indices; number of derivatives depends on how many
+        # indices the Dirac structure consumes: 0 for S/P, 1 for V/A, 2 for T.
         self.n = cgmat.ndim
-        self.nder = self.n - 1
-        if X == 'T':
-            self.nder -= 1
+        if X in ('S', 'P'):
+            self.nder = self.n
+        elif X == 'T':
+            self.nder = self.n - 2
+        else:  # V, A
+            self.nder = self.n - 1
 
         # Build symbolic representations.  These are computed once and cached.
         self.O = symO_from_Cgmat(cgmat)
@@ -448,22 +452,24 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
         M(p) = Σ_{i₁…iₙ} c_{i₁…iₙ} · Γ^X_{i₁} · p_{i₂} · … · p_{iₙ}
 
     in 4×4 Dirac space, where:
-    * V: Γ^V_i = γ_i
-    * A: Γ^A_i = γ_i γ₅
-    * T: Γ^T_{ij} = (i/2)(γ_i γ_j − γ_j γ_i) = σ_{ij}
+    * V: Γ^V_i = γ_i            (one Dirac index)
+    * A: Γ^A_i = γ_i γ₅         (one Dirac index)
+    * T: Γ^T_{ij} = (i/2)(γ_i γ_j − γ_j γ_i) = σ_{ij}  (two Dirac indices)
+    * S: Γ^S = 𝟙                (no Dirac index; all indices are derivatives)
+    * P: Γ^P = γ₅               (no Dirac index; all indices are derivatives)
 
     Parameters
     ----------
     cgmat : ndarray, shape (4,)*n
     X : str
-        ``'V'``, ``'A'``, or ``'T'``.
+        ``'V'``, ``'A'``, ``'T'``, ``'S'``, or ``'P'``.
 
     Returns
     -------
     sympy 4×4 matrix expression
     """
-    if X not in ['V', 'A', 'T']:
-        raise ValueError("X must be 'V', 'A' or 'T'.")
+    if X not in ['V', 'A', 'T', 'S', 'P']:
+        raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
     n = cgmat.ndim
     op = np.zeros((4, 4))
     for indices in it.product(range(4), repeat=n):
@@ -473,6 +479,12 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
         elif X == 'A':
             gamma_prod = gamma_mu[indices[0]] @ gamma5
             start_ind = 1
+        elif X == 'S':
+            gamma_prod = Id_4
+            start_ind = 0
+        elif X == 'P':
+            gamma_prod = gamma5
+            start_ind = 0
         else:  # 'T'
             # σ_{μν} = (i/2)[γ_μ, γ_ν]; the first two indices label the antisymmetric pair.
             gamma_prod = (
@@ -574,8 +586,9 @@ def C_parity(cgmat: np.ndarray, X: str) -> int | str:
 
         C O^X_{μ₁…μₙ} C⁻¹ = (−1)^{n + δ_X} O^X_{μ₁ μₙ … μ₂}
 
-    where δ_X = 0 for V and 1 for A, T.  We identify C-parity by comparing
-    the original cgmat with the one obtained by reversing the derivative indices.
+    where δ_X = 0 for V and S, and δ_X = 1 for A, T and P.  We identify
+    C-parity by comparing the original cgmat with the one obtained by
+    reversing the derivative indices.
 
     Parameters
     ----------
@@ -587,16 +600,21 @@ def C_parity(cgmat: np.ndarray, X: str) -> int | str:
     int or str
         +1, -1, or ``'mixed'`` if neither eigenstate.
     """
-    if X not in ['V', 'A', 'T']:
-        raise ValueError("X must be 'V', 'A' or 'T'.")
+    if X not in ['V', 'A', 'T', 'S', 'P']:
+        raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
     cgmat = np.round(cgmat, decimals=13)
     n = cgmat.ndim
     cgmat_C = np.empty(shape=np.shape(cgmat))
     for indices in it.product(range(4), repeat=n):
-        # Reverse the derivative indices (all but the first one or two for T).
-        if X in ('V', 'A'):
+        # Reverse the derivative indices.
+        # S/P carry no Dirac index so all n indices are reversed.
+        # V/A keep the first (Dirac) index fixed and reverse the rest.
+        # T keeps the first two (σ_{μν}) fixed and reverses the rest.
+        if X in ('S', 'P'):
+            cgmat_C[indices] = cgmat[indices[::-1]]
+        elif X in ('V', 'A'):
             cgmat_C[indices] = cgmat[(indices[0],) + indices[-1:0:-1]]
-        else:
+        else:  # T
             cgmat_C[indices] = cgmat[(indices[0], indices[1]) + indices[-1:1:-1]]
 
     if (cgmat == cgmat_C).all():
@@ -607,9 +625,10 @@ def C_parity(cgmat: np.ndarray, X: str) -> int | str:
         return "mixed"
 
     # Include the overall sign factor (−1)^{n + δ_X}.
-    if X == "V":
+    # δ = 0 for V, S;  δ = 1 for A, T, P.
+    if X in ("V", "S"):
         Cp *= (-1) ** n
-    elif X in ("A", "T"):
+    elif X in ("A", "T", "P"):
         Cp *= (-1) ** (n + 1)
     return Cp
 
@@ -792,14 +811,18 @@ def cg_remapping_T(raw_cg: np.ndarray, n: int) -> np.ndarray:
 
 
 def make_operator_database(
-    operator_folder: str, max_n: int, verbose: bool = False, cg_database: str | None = None
+    operator_folder: str,
+    max_n: int,
+    verbose: bool = False,
+    cg_database: str | None = None,
+    include_SP: bool = False,
 ) -> None:
     """Build a database of H(4)-irreducible lattice operators up to *max_n* indices.
 
-    For each combination of structure X ∈ {V, A, T} and index count n, the
-    function loads the relevant CG matrices from the database, loops over all
-    irreps and multiplicity blocks, and saves each resulting operator to a
-    .npy file whose filename encodes the full operator metadata.
+    For each combination of structure X and index count n, the function loads
+    the relevant CG matrices from the database, loops over all irreps and
+    multiplicity blocks, and saves each resulting operator to a .npy file
+    whose filename encodes the full operator metadata.
 
     Parameters
     ----------
@@ -808,26 +831,35 @@ def make_operator_database(
     max_n : int
         Maximum number of indices for V and A operators.  T operators
         automatically get one extra index (σ_{μν} contributes two).
+        For S and P (when *include_SP* is True) this is the maximum number
+        of derivative indices.
     verbose : bool
         Print progress messages.
     cg_database : str or None
         Path to the CG-coefficient database.  ``None`` → use the bundled data.
+    include_SP : bool
+        When ``True``, also generate scalar (S, Γ = 𝟙) and pseudoscalar
+        (P, Γ = γ₅) operators in addition to the default V, A, T set.
+        Defaults to ``False``.
     """
     if max_n < 2:
         raise ValueError("max_n must be at least 2.")
     Path(operator_folder).mkdir(parents=True, exist_ok=True)
 
-    X_list = ['V', 'A', 'T']
+    X_list = ['V', 'A', 'T', 'S', 'P'] if include_SP else ['V', 'A', 'T']
     n_list = list(range(2, max_n + 1))
     iop = 1  # global operator counter (1-based, matches the printed catalogue)
 
     for n in n_list:
         if verbose:
-            print(f"\nConstructing operators V{n}, A{n} and T{n+1}...\n")
+            label = f"V{n}, A{n}, T{n+1}, S{n-1}, P{n-1}" if include_SP else f"V{n}, A{n}, T{n+1}"
+            print(f"\nConstructing operators {label}...\n")
 
         for X in tqdm(X_list, disable=not verbose):
-            # The first irrep is fixed by the Dirac structure; all derivative
+            # The first irrep encodes the Dirac structure; all derivative
             # indices transform in the fundamental (4,1) representation.
+            # S and P have a 1-dimensional leading irrep, so their cgmat has
+            # one fewer index than the chosen_irreps list.
             chosen_irreps = []
             if X == 'V':
                 chosen_irreps.append((4, 1))
@@ -835,6 +867,10 @@ def make_operator_database(
                 chosen_irreps.append((4, 4))
             elif X == 'T':
                 chosen_irreps.append((6, 1))
+            elif X == 'S':
+                chosen_irreps.append((1, 1))
+            elif X == 'P':
+                chosen_irreps.append((1, 4))
             while len(chosen_irreps) != n:
                 chosen_irreps.append((4, 1))
 
@@ -848,11 +884,14 @@ def make_operator_database(
                     block = np.round(block, decimals=15)
                     # Each column of the CG block is an independent operator.
                     for icol in range(np.shape(block)[1]):
-                        cg_mat = (
-                            cg_remapping(block[:, icol], len(chosen_irreps))
-                            if X in ('V', 'A')
-                            else cg_remapping_T(block[:, icol], len(chosen_irreps))
-                        )
+                        if X in ('V', 'A'):
+                            cg_mat = cg_remapping(block[:, icol], len(chosen_irreps))
+                        elif X in ('S', 'P'):
+                            # Leading irrep is 1-dimensional and contributes no
+                            # Lorentz index; remap only the n-1 derivative indices.
+                            cg_mat = cg_remapping(block[:, icol], len(chosen_irreps) - 1)
+                        else:  # T
+                            cg_mat = cg_remapping_T(block[:, icol], len(chosen_irreps))
                         Operator(
                             cgmat=cg_mat,
                             id=iop,
@@ -1191,8 +1230,8 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     str
         A LaTeX string suitable for display in a Jupyter notebook or PDF.
     """
-    if X not in ['V', 'A', 'T']:
-        raise ValueError("X must be 'V', 'A' or 'T'.")
+    if X not in ['V', 'A', 'T', 'S', 'P']:
+        raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
     latex_str = ""
     monoms_list = list(sym.Add.make_args(operatorO))
     # Extract the concatenated index string from each monomial for sorting.
@@ -1348,13 +1387,19 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     """
     if not _PANDAS_AVAILABLE:
         raise ImportError("pandas is required for decomposition_analysis().")
-    if X not in ['V', 'A', 'T']:
-        raise ValueError("X must be 'V', 'A' or 'T'.")
+    if X not in ['V', 'A', 'T', 'S', 'P']:
+        raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
     if not isinstance(n_der, int) or n_der < 1:
         raise ValueError("n_der must be a positive integer.")
 
     V = (4, 1)
-    starting_irrep = ((4, 1),) if X == 'V' else ((4, 4),) if X == 'A' else ((6, 1),)
+    starting_irrep = (
+        ((4, 1),) if X == 'V' else
+        ((4, 4),) if X == 'A' else
+        ((6, 1),) if X == 'T' else
+        ((1, 1),) if X == 'S' else
+        ((1, 4),)  # P
+    )
 
     available_irreps = {
         rep_label_list[i]: ["Y", mul, "-"]
@@ -1376,7 +1421,12 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     if operator_dict is not None:
         for key in available_irreps:
             if available_irreps[key][1] == 1:
-                n_idx = n_der + 1 if X in ('V', 'A') else n_der + 2
+                if X in ('V', 'A'):
+                    n_idx = n_der + 1
+                elif X == 'T':
+                    n_idx = n_der + 2
+                else:  # S, P: all indices are derivatives
+                    n_idx = n_der
                 op_list = operator_dict[(n_idx, X)][key, 1]
                 symm_list = [op.symm for op in op_list]
                 available_irreps[key][2] = symm_list[0][0] if all_equal(symm_list) else 'Mixed'
@@ -1666,10 +1716,14 @@ def read_operator(group) -> Operator:
 if __name__ == "__main__":
     # Default to max_n=3, matching the bundled operator database shipped with the package.
     # Override by passing an integer as the first CLI argument: python moments_operator.py 4
+    # Pass "SP" as the second CLI argument to also generate S and P operators.
     max_n = 3
+    include_SP = False
     if len(sys.argv) > 1:
         try:
             max_n = int(sys.argv[1])
         except ValueError:
             pass
-    make_operator_database(operator_folder="operator_database", max_n=max_n, verbose=True)
+    if len(sys.argv) > 2 and sys.argv[2].upper() == "SP":
+        include_SP = True
+    make_operator_database(operator_folder="operator_database", max_n=max_n, verbose=True, include_SP=include_SP)
