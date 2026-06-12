@@ -172,6 +172,9 @@ print(f"Symmetry  = {op.symm}")
 # Evaluate K numerically at given kinematics
 K_val = op.evaluate_K(m_value=0.939, E_value=1.0, p1_value=0.0, p2_value=0.0, p3_value=0.3)
 print(f"K (numerical) = {K_val}")
+
+# The polarisation matrix used to compute K can be changed (indices 0–5, default 0 = γ₁γ₂):
+op.set_polarization_matrix(2)   # switch to Γ_pol = ½(1 + γ₄)(1 − i γ₂γ₃)
 ```
 
 ```python

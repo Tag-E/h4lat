@@ -99,9 +99,12 @@ from .cg_calculator import (
 from .kinematic_data import (
     E,
     Gamma_pol,
+    Gamma_pol_list,
+    Gamma_pol_s_list,
     I,
     Id_4,
     den_K,
+    den_K_list,
     gamma5,
     gamma_mu,
     mN,
@@ -134,6 +137,10 @@ class Operator:
     * ``tr`` — whether the trace Tr[cgmat] vanishes.
     * ``symm`` — index-permutation symmetry ('Symmetric', 'Antisymmetric',
       'Mixed Symmetry', or '[Invalid Operator]' for tensorial cases).
+    * ``gamma_pol_index`` — index (0–5) of the polarisation projector used
+      for computing K.  Default is 0, which reproduces the original
+      Γ_pol = ½(1 + γ₄)(1 − iγ₁γ₂).  Call ``set_polarization_matrix()`` to switch
+      to a different projector and recompute K in place.
     """
 
     def __init__(
@@ -144,6 +151,7 @@ class Operator:
         irrep: tuple[int, int] | None,
         block: int | None,
         index_block: int | None,
+        gamma_pol_index: int = 0,
     ) -> None:
         """
         Parameters
@@ -162,6 +170,18 @@ class Operator:
             Multiplicity index (1-based) within the irrep.
         index_block : int or None
             Column index (1-based) within the CG block.
+        gamma_pol_index : int, optional
+            Index (0–5) selecting the polarisation projector used to compute
+            the kinematic factor K (default 0).  The six choices are:
+                0: γ₁γ₂  (default — original hardcoded projector)
+                1: γ₁γ₃
+                2: γ₂γ₃
+                3: γ₁γ₄
+                4: γ₂γ₄
+                5: γ₃γ₄
+            Each projector has the form Γ_pol = ½(1 + γ₄)(1 − i γ_a γ_b).
+            The stored value can be changed after construction via
+            ``set_polarization_matrix()``.
         """
         self.cgmat = cgmat[:]
         self.id = id
@@ -169,6 +189,9 @@ class Operator:
         self.irrep = irrep
         self.block = block
         self.index_block = index_block
+
+        # Index of the polarisation projector used for computing K.
+        self.gamma_pol_index = gamma_pol_index
 
         # Number of Lorentz indices; number of derivatives depends on how many
         # indices the Dirac structure consumes: 0 for S/P, 1 for V/A, 2 for T.
@@ -182,7 +205,7 @@ class Operator:
 
         # Build symbolic representations.  These are computed once and cached.
         self.O = symO_from_Cgmat(cgmat)
-        self.K = Kfactor_from_diracO(diracO_from_cgmat(cgmat, X))
+        self.K = Kfactor_from_diracO(diracO_from_cgmat(cgmat, X), gamma_pol_index)
 
         # Discrete symmetry properties.
         self.C = C_parity(cgmat, X)
@@ -224,9 +247,14 @@ class Operator:
     # ------------------------------------------------------------------
 
     def __add__(self, other: Self) -> Self:
-        """Add two operators with matching X and index count."""
+        """Add two operators with matching X, index count, and polarisation index."""
         if self.X != other.X or self.n != other.n:
             raise ValueError("Operator addition requires equal X and number of indices.")
+        if self.gamma_pol_index != other.gamma_pol_index:
+            raise ValueError(
+                "Operator addition requires equal gamma_pol_index "
+                f"(got {self.gamma_pol_index} and {other.gamma_pol_index})."
+            )
         new_irrep = self.irrep if self.irrep == other.irrep else None
         new_block = self.block if (new_irrep and self.block == other.block) else None
         return Operator(
@@ -236,12 +264,18 @@ class Operator:
             irrep=new_irrep,
             block=new_block,
             index_block=None,
+            gamma_pol_index=self.gamma_pol_index,
         )
 
     def __sub__(self, other: Self) -> Self:
-        """Subtract two operators with matching X and index count."""
+        """Subtract two operators with matching X, index count, and polarisation index."""
         if self.X != other.X or self.n != other.n:
             raise ValueError("Operator subtraction requires equal X and number of indices.")
+        if self.gamma_pol_index != other.gamma_pol_index:
+            raise ValueError(
+                "Operator subtraction requires equal gamma_pol_index "
+                f"(got {self.gamma_pol_index} and {other.gamma_pol_index})."
+            )
         new_irrep = self.irrep if self.irrep == other.irrep else None
         new_block = self.block if (new_irrep and self.block == other.block) else None
         return Operator(
@@ -251,6 +285,7 @@ class Operator:
             irrep=new_irrep,
             block=new_block,
             index_block=None,
+            gamma_pol_index=self.gamma_pol_index,
         )
 
     def __mul__(self, coefficient: float) -> Self:
@@ -262,6 +297,7 @@ class Operator:
             irrep=self.irrep,
             block=self.block,
             index_block=self.index_block,
+            gamma_pol_index=self.gamma_pol_index,
         )
 
     def __rmul__(self, coefficient: float) -> Self:
@@ -278,6 +314,7 @@ class Operator:
             irrep=self.irrep,
             block=self.block,
             index_block=self.index_block,
+            gamma_pol_index=self.gamma_pol_index,
         )
 
     def __neg__(self) -> Self:
@@ -288,7 +325,61 @@ class Operator:
             irrep=self.irrep,
             block=self.block,
             index_block=self.index_block,
+            gamma_pol_index=self.gamma_pol_index,
         )
+
+    # ------------------------------------------------------------------
+    # Polarisation projector
+    # ------------------------------------------------------------------
+
+    def set_polarization_matrix(self, gamma_pol_index: int) -> None:
+        """Change the polarisation projector and recompute the kinematic factor K.
+
+        After this call ``self.gamma_pol_index``, ``self.K``,
+        ``self.p3corr_is_real``, and ``self.latex_K`` are all updated to
+        reflect the new projector.  All other attributes (cgmat, O, C, tr,
+        symm, …) are unchanged.
+
+        The six projectors, indexed 0–5, all have the form
+            Γ_pol = ½(1 + γ₄)(1 − i γ_a γ_b)
+        with the following (a, b) pairs:
+            0: γ₁γ₂  (default — original hardcoded projector)
+            1: γ₁γ₃
+            2: γ₂γ₃
+            3: γ₁γ₄
+            4: γ₂γ₄
+            5: γ₃γ₄
+
+        Parameters
+        ----------
+        gamma_pol_index : int
+            New polarisation index, 0–5.
+
+        Raises
+        ------
+        ValueError
+            If *gamma_pol_index* is outside 0–5.
+
+        Examples
+        --------
+        >>> op = Operator_from_database(1)
+        >>> op.gamma_pol_index          # 0 by default
+        0
+        >>> op.set_polarization_matrix(2)      # switch to γ₂γ₃ projector
+        >>> op.gamma_pol_index
+        2
+        >>> op.K                        # recomputed with the new projector
+        """
+        if not 0 <= gamma_pol_index <= 5:
+            raise ValueError(f"gamma_pol_index must be 0–5, got {gamma_pol_index}.")
+        self.gamma_pol_index = gamma_pol_index
+        # Recompute K with the chosen projector.
+        self.K = Kfactor_from_diracO(diracO_from_cgmat(self.cgmat, self.X), gamma_pol_index)
+        # Update the derived attributes that depend on K.
+        self.p3corr_is_real = (I in self.K.atoms()) if self.nder % 2 == 1 else (I not in self.K.atoms())
+        self.latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
+        if '/' in self.latex_K:
+            self.latex_K = "\\frac{" + self.latex_K.split('/')[0] + "}{ " + self.latex_K.split('/')[1] + "}"
 
     # ------------------------------------------------------------------
     # Kinematic factor evaluation
@@ -499,7 +590,7 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
     return op
 
 
-def Kfactor_from_diracO(operator: sym.core.add.Add) -> sym.core.mul.Mul:
+def Kfactor_from_diracO(operator: sym.core.add.Add, gamma_pol_index: int = 0) -> sym.core.mul.Mul:
     """Derive the symbolic kinematic factor from the Dirac-space operator matrix.
 
     The kinematic factor is defined as the ratio
@@ -518,16 +609,31 @@ def Kfactor_from_diracO(operator: sym.core.add.Add) -> sym.core.mul.Mul:
     ----------
     operator : sympy matrix expression
         4×4 Dirac-space operator matrix M(p).
+    gamma_pol_index : int, optional
+        Index selecting which polarisation projector to use (default 0).
+        The six choices are, in order:
+            0: γ₁γ₂  (default — reproduces the original hardcoded projector)
+            1: γ₁γ₃
+            2: γ₂γ₃
+            3: γ₁γ₄
+            4: γ₂γ₄
+            5: γ₃γ₄
+        Each projector has the form Γ_pol = ½(1 + γ₄)(1 − i γ_a γ_b).
+        See ``kinematic_data.Gamma_pol_list`` for the full list of matrices.
 
     Returns
     -------
     sympy scalar expression
     """
-    num_K = sym.trace(Gamma_pol @ (-I * pslash + mN * Id_4) @ operator @ (-I * pslash + mN * Id_4)).simplify(
+    if not 0 <= gamma_pol_index <= 5:
+        raise ValueError(f"gamma_pol_index must be 0–5, got {gamma_pol_index}.")
+    Gamma_pol_choice = Gamma_pol_list[gamma_pol_index]
+    den_K_choice = den_K_list[gamma_pol_index]
+    num_K = sym.trace(Gamma_pol_choice @ (-I * pslash + mN * Id_4) @ operator @ (-I * pslash + mN * Id_4)).simplify(
         rational=True
     )
     return (
-        (num_K / den_K)
+        (num_K / den_K_choice)
         .simplify(rational=True)
         .subs({E**2: p1**2 + p2**2 + p3**2 + mN**2, E**3: E * (p1**2 + p2**2 + p3**2 + mN**2)})
         .simplify(rational=True)

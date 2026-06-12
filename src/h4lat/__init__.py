@@ -9,6 +9,14 @@ Quick start
 >>> cg.cg_dict                                  # {irrep_index: [cgmat, ...], ...}
 """
 
+from .kinematic_data import (
+    Gamma_pol,
+    Gamma_pol_list,
+    Gamma_pol_s,
+    Gamma_pol_s_list,
+    den_K,
+    den_K_list,
+)
 from .cg_calculator import (
     _BUNDLED_OPERATOR_DATABASE as OPERATOR_DATABASE,
 )
@@ -110,4 +118,11 @@ __all__ = [
     "read_operator",
     # bundled data paths
     "OPERATOR_DATABASE",
+    # Kinematic / polarisation data
+    "Gamma_pol",
+    "Gamma_pol_list",
+    "Gamma_pol_s",
+    "Gamma_pol_s_list",
+    "den_K",
+    "den_K_list",
 ]
