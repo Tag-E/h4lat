@@ -56,11 +56,13 @@ from .moments_operator import (
     get_OperatorDict,
     get_OperatorList,
     get_op_selection,
+    h5_to_operator_list,
     index_symm,
     index_symm_2exchange,
     index_symm_index_fixed,
     latexO_from_diracO,
     make_operator_database,
+    operator_list_to_h5,
     read_operator,
     symO_from_Cgmat,
     trace_symm,
@@ -116,6 +118,8 @@ __all__ = [
     "decomposition_analysis",
     "write_operator",
     "read_operator",
+    "operator_list_to_h5",
+    "h5_to_operator_list",
     # bundled data paths
     "OPERATOR_DATABASE",
     # Kinematic / polarisation data

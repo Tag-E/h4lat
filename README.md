@@ -234,6 +234,32 @@ make_operator_database(
 )
 ```
 
+### Saving and reloading operators (HDF5)
+
+`operator_list_to_h5` / `h5_to_operator_list` save an arbitrary `list[Operator]`
+to a single portable `.h5` file and reload it later, preserving every attribute
+needed to reconstruct each operator exactly — including `gamma_pol_index`, so a
+custom polarisation matrix set via `set_polarization_matrix()` survives the
+round trip.  This is a lighter-weight alternative to `make_operator_database`
+for saving an ad-hoc selection of operators (e.g. the output of
+`get_op_selection`, or operators built by hand) rather than a full database:
+
+```python
+from h4lat import get_op_selection, operator_list_to_h5, h5_to_operator_list
+
+ops = get_op_selection(n_der=1)          # any list of Operator objects
+operator_list_to_h5(ops, "my_operators/selection.h5")
+
+# ... later, possibly in a different session ...
+reloaded = h5_to_operator_list("my_operators/selection.h5")
+assert [op.id for op in reloaded] == [op.id for op in ops]
+```
+
+Requires `h5py` (`pip install "h4lat[full]"` or `"h4lat[operators]"`). Under the
+hood, each operator is stored in its own group and (de)serialised with
+`write_operator` / `read_operator`, which can be used directly if you need to
+embed a single operator inside a larger, custom HDF5 layout of your own.
+
 ---
 
 ## Module overview

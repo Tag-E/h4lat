@@ -82,7 +82,7 @@ except ImportError:
     _PYLATEX_AVAILABLE = False
 
 try:
-    import h5py  # noqa: F401 — guard import; availability flag used downstream
+    import h5py  # used directly by operator_list_to_h5/h5_to_operator_list
 
     _H5PY_AVAILABLE = True
 except ImportError:
@@ -1749,9 +1749,14 @@ def write_operator(group, operator: Operator) -> None:
     """Serialise an Operator into an HDF5 group.
 
     Stores the ``cgmat`` as a compressed dataset and all scalar attributes
-    (``id``, ``X``, ``irrep``, ``block``, ``index_block``) as group attributes.
-    None-valued attributes are recorded via a ``_is_none`` flag so that they
-    can be correctly reconstructed by ``read_operator``.
+    (``id``, ``X``, ``irrep``, ``block``, ``index_block``, ``gamma_pol_index``)
+    as group attributes.  None-valued attributes (``id``, ``irrep``, ``block``,
+    ``index_block`` can each legitimately be ``None`` — e.g. for operators
+    produced by ``Operator.__add__``/``__sub__``) are recorded via a
+    ``_is_none`` flag so that they can be correctly reconstructed by
+    ``read_operator``.  ``h5py`` attributes have no native representation for
+    ``None``, so writing it directly would raise a ``TypeError``; the flag
+    sidesteps that entirely.
 
     Parameters
     ----------
@@ -1761,9 +1766,21 @@ def write_operator(group, operator: Operator) -> None:
     if not _H5PY_AVAILABLE:
         raise ImportError("h5py is required for HDF5 I/O.")
     op_group = group.create_group("operator")
-    op_group.attrs["id"] = operator.id
+
+    # `id` can be None (see docstring above), so it goes through the same
+    # _is_none pattern already used for irrep/block/index_block below.
+    if operator.id is None:
+        op_group.attrs["id_is_none"] = True
+    else:
+        op_group.attrs["id"] = operator.id
+
     op_group.attrs["X"] = operator.X
     op_group.create_dataset("cgmat", data=operator.cgmat, compression="gzip")
+
+    # gamma_pol_index selects which of the six polarisation projectors was
+    # used to compute K (see Operator.set_polarization_matrix); it changes
+    # the physical content of K, so it must round-trip along with cgmat.
+    op_group.attrs["gamma_pol_index"] = operator.gamma_pol_index
 
     if operator.irrep is None:
         op_group.attrs["irrep_is_none"] = True
@@ -1798,14 +1815,23 @@ def read_operator(group) -> Operator:
 
     op_group = group["operator"]
 
-    raw_id = op_group.attrs["id"]
-    if isinstance(raw_id, bytes):
-        raw_id = raw_id.decode()
-    operator_id = int(raw_id) if isinstance(raw_id, (int, _np.integer)) else str(raw_id)
+    if op_group.attrs.get("id_is_none", False):
+        operator_id = None
+    else:
+        raw_id = op_group.attrs["id"]
+        if isinstance(raw_id, bytes):
+            raw_id = raw_id.decode()
+        operator_id = int(raw_id) if isinstance(raw_id, (int, _np.integer)) else str(raw_id)
 
     irrep = None if op_group.attrs.get("irrep_is_none", False) else tuple(op_group.attrs["irrep"])
     block = None if op_group.attrs.get("block_is_none", False) else int(op_group.attrs["block"])
     index_block = None if op_group.attrs.get("index_block_is_none", False) else int(op_group.attrs["index_block"])
+
+    # `.get(..., 0)` keeps this backward compatible with files written before
+    # gamma_pol_index was persisted: they silently default to projector 0,
+    # which matches Operator's own default and was the only projector in use
+    # at the time those files could have been written.
+    gamma_pol_index = int(op_group.attrs.get("gamma_pol_index", 0))
 
     return Operator(
         cgmat=_np.array(op_group["cgmat"]),
@@ -1814,7 +1840,76 @@ def read_operator(group) -> Operator:
         irrep=irrep,
         block=block,
         index_block=index_block,
+        gamma_pol_index=gamma_pol_index,
     )
+
+
+# Width used to zero-pad the per-operator slot names created by
+# operator_list_to_h5 (e.g. "op_000042").  Six digits comfortably covers any
+# realistic operator database (up to 999,999 operators) while keeping slot
+# names short; it is not a hard limit, just the padding used for sorting.
+_H5_SLOT_DIGITS = 6
+
+
+def operator_list_to_h5(operators: list[Operator], file_path: str) -> None:
+    """Serialise a list of Operators into a single HDF5 file.
+
+    Each operator is written into its own top-level group inside *file_path*
+    via ``write_operator``.  Groups are named ``"op_000000"``, ``"op_000001"``,
+    … using the operator's position in *operators*, NOT ``operator.id`` — id
+    can be ``None`` (see ``write_operator``) or repeated across the list, so
+    it cannot be relied on as a unique key, whereas the position always is.
+    Zero-padding the index keeps the group names sorting lexicographically in
+    the same order as *operators*, which is what ``h5_to_operator_list``
+    relies on to restore the original list order.
+
+    Parameters
+    ----------
+    operators : list[Operator]
+        Operators to save, in the order they should be restored.
+    file_path : str
+        Destination path of the ``.h5`` file.  Parent directories are
+        created if missing; an existing file at this path is overwritten.
+    """
+    if not _H5PY_AVAILABLE:
+        raise ImportError("h5py is required for HDF5 I/O.")
+
+    # Create parent directories (if any) so callers can pass a path like
+    # "my_folder/operators.h5" into a folder that does not exist yet.
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # "w" truncates/creates the file, so re-running this on the same path
+    # always produces a fresh, self-consistent snapshot of *operators*.
+    with h5py.File(file_path, "w") as f:
+        for i, operator in enumerate(operators):
+            slot = f.create_group(f"op_{i:0{_H5_SLOT_DIGITS}d}")
+            write_operator(slot, operator)
+
+
+def h5_to_operator_list(file_path: str) -> list[Operator]:
+    """Reload a list of Operators previously saved by ``operator_list_to_h5``.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to an ``.h5`` file written by ``operator_list_to_h5``.
+
+    Returns
+    -------
+    list[Operator]
+        The operators, in the same order they were originally saved.
+    """
+    if not _H5PY_AVAILABLE:
+        raise ImportError("h5py is required for HDF5 I/O.")
+
+    if not Path(file_path).is_file():
+        raise ValueError(f"Path does not exist: {file_path}")
+
+    with h5py.File(file_path, "r") as f:
+        # Sorting the (zero-padded) group names lexicographically recovers
+        # the exact save order written by operator_list_to_h5.
+        slot_names = sorted(f.keys())
+        return [read_operator(f[name]) for name in slot_names]
 
 
 ###################### Execution as Main ############################
