@@ -1823,7 +1823,15 @@ def read_operator(group) -> Operator:
             raw_id = raw_id.decode()
         operator_id = int(raw_id) if isinstance(raw_id, (int, _np.integer)) else str(raw_id)
 
-    irrep = None if op_group.attrs.get("irrep_is_none", False) else tuple(op_group.attrs["irrep"])
+    # Cast each entry to a plain int: h5py returns attrs["irrep"] as a NumPy
+    # int64 array, and tuple(...)-ing it directly would leave np.int64
+    # elements instead of plain ints (unlike block/index_block below, which
+    # were already cast).
+    irrep = (
+        None
+        if op_group.attrs.get("irrep_is_none", False)
+        else tuple(int(x) for x in op_group.attrs["irrep"])
+    )
     block = None if op_group.attrs.get("block_is_none", False) else int(op_group.attrs["block"])
     index_block = None if op_group.attrs.get("index_block_is_none", False) else int(op_group.attrs["index_block"])
 
