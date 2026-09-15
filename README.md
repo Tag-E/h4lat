@@ -4,6 +4,28 @@
 
 ---
 
+## Contents
+
+- [Physics background](#physics-background)
+- [Installation](#installation)
+- [Examples](#examples)
+- [Quick start](#quick-start)
+  - [Tensor-product decomposition](#tensor-product-decomposition)
+  - [Loading CG coefficients](#loading-cg-coefficients)
+  - [Computing new CG coefficients](#computing-new-cg-coefficients)
+  - [Constructing lattice operators](#constructing-lattice-operators)
+  - [Loading operators from the bundled database](#loading-operators-from-the-bundled-database)
+  - [Operators free of mixing](#operators-free-of-mixing)
+  - [Building an operator database](#building-an-operator-database)
+  - [Saving and reloading operators (HDF5)](#saving-and-reloading-operators-hdf5)
+- [Module overview](#module-overview)
+- [References](#references)
+- [Acknowledgements](#acknowledgements)
+- [How to cite](#how-to-cite)
+- [License](#license)
+
+---
+
 ## Physics background
 
 Lattice QCD calculations of nucleon structure (parton distribution functions, form
@@ -289,6 +311,21 @@ embed a single operator inside a larger, custom HDF5 layout of your own.
 
 This library was developed with the assistance of [Claude](https://www.anthropic.com/claude)
 (Anthropic), an AI assistant, which helped with code generation, testing, and documentation.
+
+---
+
+## How to cite
+
+If you use `h4lat` in your research, please cite the repository:
+
+```bibtex
+@misc{Taggi_h4lat,
+  author  = {Taggi, Emilio},
+  title   = {{h4lat}: {C}lebsch-{G}ordan coefficients and lattice operators for the hypercubic group {H(4)}},
+  year    = {2026},
+  url     = {https://github.com/Tag-E/h4lat}
+}
+```
 
 ---
 
