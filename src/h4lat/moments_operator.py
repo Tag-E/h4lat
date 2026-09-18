@@ -891,8 +891,8 @@ def cg_remapping_T(raw_cg: np.ndarray, n: int) -> np.ndarray:
     raw_cg : ndarray, shape (6 * 4**(n-2),)
         Flattened CG column for a tensorial (T) operator with n−1 derivatives.
     n : int
-        Number of derivative indices (the tensor accounts for two Dirac indices,
-        so the full cgmat will have shape (4,)*(n+1)).
+        Number of derivative indices +1 (= number of tensor-product factors)
+        (the tensor accounts for two Dirac indices, so the full cgmat will have shape (4,)*(n+1)).
 
     Returns
     -------
