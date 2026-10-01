@@ -198,7 +198,7 @@ def test_package_version():
 
 
 def test_public_api_present():
-    pass
+    assert all(hasattr(h4lat, name) for name in h4lat.__all__)
 
 
 # ---------------------------------------------------------------------------

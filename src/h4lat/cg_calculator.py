@@ -974,20 +974,20 @@ def CGmat_from_block(block: np.ndarray, m: int = 0, mul: int = 1, gram_schmidt: 
                 monom_rows[monom].append(i)
 
     entry_sizes = np.zeros(shape=np.shape(mat), dtype=int)
-    monoms_in_colum = {}
+    monoms_in_column = {}
     for j in range(np.shape(mat)[1]):
-        monoms_in_colum[j] = []
+        monoms_in_column[j] = []
         for i in range(np.shape(mat)[0]):
             entry = sym.Add.make_args(mat[i, j])
             entry_sizes[i, j] = len(entry)
             for element in entry:
                 monom = element.as_coeff_Mul()[1]
-                if monom not in monoms_in_colum[j]:
-                    monoms_in_colum[j].append(monom)
+                if monom not in monoms_in_column[j]:
+                    monoms_in_column[j].append(monom)
 
     for k in monom_counts.keys():
         for j in range(np.shape(mat)[1]):
-            if k not in monoms_in_colum[j]:
+            if k not in monoms_in_column[j]:
                 monom_counts[k] = -1
 
     monom_dict = {}
@@ -999,18 +999,10 @@ def CGmat_from_block(block: np.ndarray, m: int = 0, mul: int = 1, gram_schmidt: 
                 if (monom not in monom_dict) and (not isinstance(monom, sym.core.numbers.One)):
                     monom_dict[monom] = 0.0
 
-    target = mul
     newmat = mat.copy()
 
     if mul == 1:
-        index = max(monom_counts, key=monom_counts.get)
         index_list = [max(monom_counts, key=monom_counts.get)]
-        for _ in range(target - 1):
-            for k in monom_counts:
-                if monom_rows[k] == monom_rows[index]:
-                    monom_counts[k] = -1
-            index = max(monom_counts, key=monom_counts.get)
-            index_list.append(max(monom_counts, key=monom_counts.get))
         monom_dict[index_list[m]] = 1.0
     else:
         max_len = mode([e for e in entry_sizes.flatten() if e != 1])
@@ -1020,9 +1012,9 @@ def CGmat_from_block(block: np.ndarray, m: int = 0, mul: int = 1, gram_schmidt: 
                     newmat[i, j] = sym.core.numbers.Zero()
 
         index_list = []
-        occurences_mode = mode([v for v in monom_counts.values() if v > 0])
+        occurrences_mode = mode([v for v in monom_counts.values() if v > 0])
         for k in monom_counts:
-            if monom_counts[k] == occurences_mode:
+            if monom_counts[k] == occurrences_mode:
                 index_list.append(k)
         monom_dict[index_list[int((m + 1 / 2) * len(index_list) / mul)]] = 1.0
 
@@ -1048,15 +1040,15 @@ def CGmat_from_block(block: np.ndarray, m: int = 0, mul: int = 1, gram_schmidt: 
             newmat[:, j] /= newmat[(newmat[:, j] != 0).argmax(axis=0), j]
 
     newmat = np.asarray(newmat).astype(np.float64)
-    treshold = 10 ** (-10)
+    threshold = 10 ** (-10)
 
     for j in range(np.shape(newmat)[1]):
         index = np.abs(newmat[:, j]).argmax(axis=0)
         norm = np.abs(newmat[index, j])
-        if norm > 1 / treshold:
+        if norm > 1 / threshold:
             newmat[:, j] /= norm
 
-    newmat[np.abs(newmat) < treshold] = 0.0
+    newmat[np.abs(newmat) < threshold] = 0.0
 
     return newmat
 

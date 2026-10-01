@@ -187,7 +187,7 @@ Kept for backward compatibility; prefer ``den_K_list`` in new code.
 ######################## Numeric → LaTeX Conversion Dict #################
 
 # Pre-build a lookup table mapping floats → LaTeX strings for fractions and
-# 1/√n expressions, used by Operator.to_latex() when printing CG coefficients.
+# 1/√n expressions, used by latexO_from_diracO() when printing CG coefficients.
 # is_square() filters perfect-square denominators since √(n²) = n is already
 # covered by the integer/fraction case; gcd filtering keeps only reduced fractions.
 max_int = 1000

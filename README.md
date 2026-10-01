@@ -79,7 +79,7 @@ pip install "h4lat[operators]"      # + pandas, gvar, h5py, IPython
 For development:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Tag-E/h4lat.git
 cd h4lat
 pip install -e ".[full]"
 ```

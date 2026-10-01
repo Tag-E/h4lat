@@ -12,7 +12,7 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 authors = [{ name = "Emilio Taggi", email = "emilio.taggi@gmail.com" }]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 dependencies = [
     "numpy",

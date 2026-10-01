@@ -899,7 +899,7 @@ def cg_remapping_T(raw_cg: np.ndarray, n: int) -> np.ndarray:
     ndarray, shape (4,)*(n+1)
     """
     cg_remapped = np.zeros(shape=(4,) * (n + 1))
-    # The order of the 6 indipendent combinations is fixed by the
+    # The order of the 6 independent combinations is fixed by the
     # choice of matrix representation for the irrep (6,1) of H(4)
     for k, ij in enumerate(["12", "13", "23", "14", "24", "34"]):
         i = int(ij[0]) - 1
@@ -1811,7 +1811,6 @@ def read_operator(group) -> Operator:
     """
     if not _H5PY_AVAILABLE:
         raise ImportError("h5py is required for HDF5 I/O.")
-    import numpy as _np
 
     op_group = group["operator"]
 
@@ -1821,7 +1820,7 @@ def read_operator(group) -> Operator:
         raw_id = op_group.attrs["id"]
         if isinstance(raw_id, bytes):
             raw_id = raw_id.decode()
-        operator_id = int(raw_id) if isinstance(raw_id, (int, _np.integer)) else str(raw_id)
+        operator_id = int(raw_id) if isinstance(raw_id, (int, np.integer)) else str(raw_id)
 
     # Cast each entry to a plain int: h5py returns attrs["irrep"] as a NumPy
     # int64 array, and tuple(...)-ing it directly would leave np.int64
@@ -1842,7 +1841,7 @@ def read_operator(group) -> Operator:
     gamma_pol_index = int(op_group.attrs.get("gamma_pol_index", 0))
 
     return Operator(
-        cgmat=_np.array(op_group["cgmat"]),
+        cgmat=np.array(op_group["cgmat"]),
         id=operator_id,
         X=str(op_group.attrs["X"]),
         irrep=irrep,
