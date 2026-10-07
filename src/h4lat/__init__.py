@@ -42,6 +42,7 @@ from .cg_calculator import (
     rep_label_list,
 )
 from .moments_operator import (
+    DISCRETIZATIONS,
     C_parity,
     Kfactor_from_diracO,
     Operator,
@@ -95,6 +96,7 @@ __all__ = [
     "n_ele_s4",
     # Operator
     "Operator",
+    "DISCRETIZATIONS",
     "make_operator_database",
     "Operator_from_file",
     "OperatorList_from_database",
