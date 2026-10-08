@@ -117,16 +117,6 @@ from .kinematic_data import (
 )
 from .utilities import all_equal, parity
 
-# Discretization labels an Operator can carry (see Operator.set_discretization).
-DISCRETIZATIONS = ("default", "symmetric")
-
-
-def _check_discretization(discretization: str) -> None:
-    """Raise if *discretization* is not one of the allowed labels in ``DISCRETIZATIONS``."""
-    if discretization not in DISCRETIZATIONS:
-        raise ValueError(f"discretization must be one of {DISCRETIZATIONS}, got {discretization!r}.")
-
-
 ######################## Main Class #####################################
 
 
@@ -151,10 +141,6 @@ class Operator:
       for computing K.  Default is 0, which reproduces the original
       Γ_pol = ½(1 + γ₄)(1 − iγ₁γ₂).  Call ``set_polarization_matrix()`` to switch
       to a different projector and recompute K in place.
-    * ``discretization`` — label identifying the lattice discretization the
-      operator refers to: ``'default'`` (default) or ``'symmetric'``.
-      Arithmetic is only allowed between operators sharing the same label.
-      Call ``set_discretization()`` to change it after construction.
     """
 
     def __init__(
@@ -166,7 +152,6 @@ class Operator:
         block: int | None,
         index_block: int | None,
         gamma_pol_index: int = 0,
-        discretization: str = "default",
     ) -> None:
         """
         Parameters
@@ -197,25 +182,13 @@ class Operator:
             Each projector has the form Γ_pol = ½(1 + γ₄)(1 − i γ_a γ_b).
             The stored value can be changed after construction via
             ``set_polarization_matrix()``.
-        discretization : str, optional
-            Label identifying the lattice discretization of the operator,
-            either ``'default'`` (default) or ``'symmetric'`` (see
-            ``DISCRETIZATIONS``).  It does not enter the symbolic quantities
-            (O, K, C, …), but operators with different labels cannot be
-            combined arithmetically.  The stored value can be changed after
-            construction via ``set_discretization()``.
         """
-        _check_discretization(discretization)
-
         self.cgmat = cgmat[:]
         self.id = id
         self.X = X
         self.irrep = irrep
         self.block = block
         self.index_block = index_block
-
-        # Label of the lattice discretization; only operators sharing it can be combined.
-        self.discretization = discretization
 
         # Index of the polarisation projector used for computing K.
         self.gamma_pol_index = gamma_pol_index
@@ -274,18 +247,13 @@ class Operator:
     # ------------------------------------------------------------------
 
     def __add__(self, other: Self) -> Self:
-        """Add two operators with matching X, index count, polarisation index, and discretization."""
+        """Add two operators with matching X, index count, and polarisation index."""
         if self.X != other.X or self.n != other.n:
             raise ValueError("Operator addition requires equal X and number of indices.")
         if self.gamma_pol_index != other.gamma_pol_index:
             raise ValueError(
                 "Operator addition requires equal gamma_pol_index "
                 f"(got {self.gamma_pol_index} and {other.gamma_pol_index})."
-            )
-        if self.discretization != other.discretization:
-            raise ValueError(
-                "Operator addition requires equal discretization "
-                f"(got {self.discretization!r} and {other.discretization!r})."
             )
         new_irrep = self.irrep if self.irrep == other.irrep else None
         new_block = self.block if (new_irrep and self.block == other.block) else None
@@ -297,22 +265,16 @@ class Operator:
             block=new_block,
             index_block=None,
             gamma_pol_index=self.gamma_pol_index,
-            discretization=self.discretization,
         )
 
     def __sub__(self, other: Self) -> Self:
-        """Subtract two operators with matching X, index count, polarisation index, and discretization."""
+        """Subtract two operators with matching X, index count, and polarisation index."""
         if self.X != other.X or self.n != other.n:
             raise ValueError("Operator subtraction requires equal X and number of indices.")
         if self.gamma_pol_index != other.gamma_pol_index:
             raise ValueError(
                 "Operator subtraction requires equal gamma_pol_index "
                 f"(got {self.gamma_pol_index} and {other.gamma_pol_index})."
-            )
-        if self.discretization != other.discretization:
-            raise ValueError(
-                "Operator subtraction requires equal discretization "
-                f"(got {self.discretization!r} and {other.discretization!r})."
             )
         new_irrep = self.irrep if self.irrep == other.irrep else None
         new_block = self.block if (new_irrep and self.block == other.block) else None
@@ -324,7 +286,6 @@ class Operator:
             block=new_block,
             index_block=None,
             gamma_pol_index=self.gamma_pol_index,
-            discretization=self.discretization,
         )
 
     def __mul__(self, coefficient: float) -> Self:
@@ -337,7 +298,6 @@ class Operator:
             block=self.block,
             index_block=self.index_block,
             gamma_pol_index=self.gamma_pol_index,
-            discretization=self.discretization,
         )
 
     def __rmul__(self, coefficient: float) -> Self:
@@ -355,7 +315,6 @@ class Operator:
             block=self.block,
             index_block=self.index_block,
             gamma_pol_index=self.gamma_pol_index,
-            discretization=self.discretization,
         )
 
     def __neg__(self) -> Self:
@@ -367,7 +326,6 @@ class Operator:
             block=self.block,
             index_block=self.index_block,
             gamma_pol_index=self.gamma_pol_index,
-            discretization=self.discretization,
         )
 
     # ------------------------------------------------------------------
@@ -422,41 +380,6 @@ class Operator:
         self.latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
         if '/' in self.latex_K:
             self.latex_K = "\\frac{" + self.latex_K.split('/')[0] + "}{ " + self.latex_K.split('/')[1] + "}"
-
-    # ------------------------------------------------------------------
-    # Discretization
-    # ------------------------------------------------------------------
-
-    def set_discretization(self, discretization: str) -> None:
-        """Change the discretization label of the operator.
-
-        The label does not enter any of the symbolic quantities (cgmat, O, K,
-        C, tr, symm, …), which are therefore left unchanged.  It only
-        determines which operators this one can be combined with: addition
-        and subtraction require both operands to carry the same label.
-
-        Parameters
-        ----------
-        discretization : str
-            New discretization label, one of ``DISCRETIZATIONS``
-            (``'default'`` or ``'symmetric'``).
-
-        Raises
-        ------
-        ValueError
-            If *discretization* is not one of the allowed labels.
-
-        Examples
-        --------
-        >>> op = Operator_from_database(1)
-        >>> op.discretization           # 'default' by default
-        'default'
-        >>> op.set_discretization("symmetric")
-        >>> op.discretization
-        'symmetric'
-        """
-        _check_discretization(discretization)
-        self.discretization = discretization
 
     # ------------------------------------------------------------------
     # Kinematic factor evaluation
@@ -1826,9 +1749,9 @@ def write_operator(group, operator: Operator) -> None:
     """Serialise an Operator into an HDF5 group.
 
     Stores the ``cgmat`` as a compressed dataset and all scalar attributes
-    (``id``, ``X``, ``irrep``, ``block``, ``index_block``, ``gamma_pol_index``,
-    ``discretization``) as group attributes.  None-valued attributes (``id``,
-    ``irrep``, ``block``, ``index_block`` can each legitimately be ``None`` — e.g. for operators
+    (``id``, ``X``, ``irrep``, ``block``, ``index_block``, ``gamma_pol_index``)
+    as group attributes.  None-valued attributes (``id``, ``irrep``, ``block``,
+    ``index_block`` can each legitimately be ``None`` — e.g. for operators
     produced by ``Operator.__add__``/``__sub__``) are recorded via a
     ``_is_none`` flag so that they can be correctly reconstructed by
     ``read_operator``.  ``h5py`` attributes have no native representation for
@@ -1858,10 +1781,6 @@ def write_operator(group, operator: Operator) -> None:
     # used to compute K (see Operator.set_polarization_matrix); it changes
     # the physical content of K, so it must round-trip along with cgmat.
     op_group.attrs["gamma_pol_index"] = operator.gamma_pol_index
-
-    # discretization restricts which operators can be combined (see
-    # Operator.set_discretization), so it must round-trip as well.
-    op_group.attrs["discretization"] = operator.discretization
 
     if operator.irrep is None:
         op_group.attrs["irrep_is_none"] = True
@@ -1915,17 +1834,12 @@ def read_operator(group) -> Operator:
     block = None if op_group.attrs.get("block_is_none", False) else int(op_group.attrs["block"])
     index_block = None if op_group.attrs.get("index_block_is_none", False) else int(op_group.attrs["index_block"])
 
-    # gamma_pol_index and discretization are optional: files written before
-    # they were persisted do not carry them.  A missing attribute is left out
-    # of the constructor call, so the Operator default applies.
+    # gamma_pol_index is optional: files written before it was persisted do
+    # not carry it.  A missing attribute is left out of the constructor call,
+    # so the Operator default applies.
     kwargs: dict = {}
     if "gamma_pol_index" in op_group.attrs:
         kwargs["gamma_pol_index"] = int(op_group.attrs["gamma_pol_index"])
-    if "discretization" in op_group.attrs:
-        raw_discretization = op_group.attrs["discretization"]
-        if isinstance(raw_discretization, bytes):
-            raw_discretization = raw_discretization.decode()
-        kwargs["discretization"] = str(raw_discretization)
 
     return Operator(
         cgmat=np.array(op_group["cgmat"]),
