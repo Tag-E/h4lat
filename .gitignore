@@ -13,6 +13,7 @@ build/
 .venv/
 venv/
 env/
+.backup_venv*
 
 # Jupyter
 .ipynb_checkpoints/
@@ -30,6 +31,10 @@ operator_catalogue.pdf
 !src/h4lat/data/cg_database/
 !src/h4lat/data/h4_ele/
 !src/h4lat/data/operator_database/
+
+# Local notes and work directory of scripts/regenerate_data.py
+/REGENERATE_DATA.txt
+/regenerated_data/
 
 # Claude Code session data
 .claude/

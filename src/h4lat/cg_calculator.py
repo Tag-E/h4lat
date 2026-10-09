@@ -83,6 +83,17 @@ _BUNDLED_H4_ELE = _pkg_data('h4_ele')
 _BUNDLED_CG_DATABASE = _pkg_data('cg_database')
 _BUNDLED_OPERATOR_DATABASE = _pkg_data('operator_database')
 
+# Data generated at runtime goes to these folders in the working directory, never
+# into the (possibly read-only) package data.  To update the bundled data, use
+# scripts/regenerate_data.py, or copy them into src/h4lat/data/ by hand.
+_LOCAL_H4_ELE = 'h4_ele'
+_LOCAL_CG_DATABASE = 'cg_database'
+
+
+def _sorted_cg_files(folder: str) -> list[Path]:
+    """Return the CG files '{irep}_{m}.npy' in *folder* sorted by (irep, m), not in filesystem order."""
+    return sorted(Path(folder).glob('*.npy'), key=lambda f: tuple(int(x) for x in f.stem.split('_')))
+
 
 ######################## Global Variables ###############################
 
@@ -155,7 +166,11 @@ class_orders = [1, 4, 12, 12, 6, 32, 24, 24, 4, 32, 48, 48, 12, 24, 12, 32, 32, 
 # fundamental representation) and β (a cyclic 4-rotation).  Z₂⁴ is generated
 # by four independent reflections γ₁,…,γ₄, one per lattice axis.
 # The three lists below give the matrix of each generator in all 20 irreps,
-# ordered to match rep_label_list.
+# ordered to match rep_label_list.  In every irrep they must satisfy the S(4)
+# relations α² = β⁴ = (αβ)³ = 1 (checked in tests/test_cg_correctness.py).
+# The 6-dim irreps act on pairs of axes in the order 12, 13, 23, 14, 24, 34
+# (the order assumed by cg_remapping_T): (6,1) on e_i ∧ e_j as ∧²(4,1), (6,3) on
+# the symmetric e_i e_j (i ≠ j), (6,2) = (6,1) ⊗ (1,2) and (6,4) = (6,3) ⊗ (1,4).
 
 alpha_list = []
 
@@ -170,7 +185,9 @@ alpha_list.append(a)
 
 a = np.array([[1, 0], [0, -1]], dtype=float)
 alpha_list.append(a)
-a = np.array([[1, 0], [0, 1]], dtype=float)
+# (2,2) = (2,1) ⊗ (1,2) has the same α as (2,1).  Baake et al. (1982) give α = 1 here,
+# which violates (αβ)³ = 1 and so does not define a representation (see README).
+a = np.array([[1, 0], [0, -1]], dtype=float)
 alpha_list.append(a)
 
 a = np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=float)
@@ -316,7 +333,7 @@ b = np.array(
         [1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, -1],
         [0, 1, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 1],
+        [0, 0, 1, 0, 0, 0],
     ],
     dtype=float,
 )
@@ -328,7 +345,7 @@ b = np.array(
         [1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, -1],
         [0, 1, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 1],
+        [0, 0, 1, 0, 0, 0],
     ],
     dtype=float,
 )
@@ -340,7 +357,7 @@ b = np.array(
         [1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 1],
         [0, 1, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 1],
+        [0, 0, 1, 0, 0, 0],
     ],
     dtype=float,
 )
@@ -352,7 +369,7 @@ b = np.array(
         [-1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, -1],
         [0, -1, 0, 0, 0, 0],
-        [0, 0, -1, 0, 0, 1],
+        [0, 0, -1, 0, 0, 0],
     ],
     dtype=float,
 )
@@ -497,14 +514,18 @@ class cg_calc:
         *kwarg : tuple[int,int]
             Irreps of H(4), e.g. (4,1), (4,4), (6,1), …
         cgdatabase : str or None
-            Path to the CG-coefficient database.  Defaults to the bundled database.
+            Path to a CG-coefficient database, used for both reading and writing.
+            If None (default), a product is read from the bundled database if it is
+            there, else from ./cg_database, and new results are written to
+            ./cg_database; the bundled data are never modified.
         force_computation : bool
             Recompute CG coefficients even if the database entry already exists.
         force_h4gen : bool
-            Recompute all H(4) matrix representations even if they are cached.
+            Recompute all H(4) matrix representations from the generators and save
+            them to ./h4_ele instead of loading the bundled ones.
         prescription_changed : bool
-            Re-apply CGmat_from_block to the raw symbolic matrices and overwrite
-            the stored numerical matrices.
+            Re-apply CGmat_from_block to the raw symbolic matrices and save the new
+            numerical matrices to the output database (see cgdatabase).
         enforce_symmetry : bool
             Zero out entries incompatible with alpha/gamma symmetry (default True).
         verbose : bool
@@ -514,18 +535,21 @@ class cg_calc:
         self.chosen_irreps = kwarg
 
         # --- data paths -----------------------------------------------------------
-        # When force_h4gen=True the user wants to regenerate; write to cwd.
-        # Otherwise read from the bundled package data (read-only).
-        if force_h4gen:
-            self.h4_ele_folder = 'h4_ele'
+        # The bundled package data are only read, never written: regenerated H(4)
+        # matrices and new CG coefficients go to the local folders (_LOCAL_*).
+        if force_h4gen or not Path(_BUNDLED_H4_ELE).exists():
+            self.h4_ele_folder = _LOCAL_H4_ELE
         else:
             self.h4_ele_folder = _BUNDLED_H4_ELE
 
-        # CG database: user-supplied path takes priority, else bundled data.
-        if cgdatabase is None:
-            self.cg_database_folder = _BUNDLED_CG_DATABASE
-        else:
-            self.cg_database_folder = cgdatabase
+        # CG database: a user-supplied path is used for both reading and writing.
+        # Otherwise new results are written to the local database, and a product is
+        # read from the bundled data if it is there, else from the local database.
+        product_name = ''.join([str(ir) for ir in self.chosen_irreps])
+        self.cg_database_folder = _LOCAL_CG_DATABASE if cgdatabase is None else cgdatabase
+        self.cg_folder = self.cg_database_folder + '/' + product_name
+        if cgdatabase is None and Path(_BUNDLED_CG_DATABASE + '/' + product_name).exists():
+            self.cg_folder = _BUNDLED_CG_DATABASE + '/' + product_name
         # --------------------------------------------------------------------------
 
         if not Path(self.h4_ele_folder).exists() or force_h4gen:
@@ -613,7 +637,6 @@ class cg_calc:
                         self.h4_mat[ir].append(np.load(f, allow_pickle=True))
 
         self.mul_list = get_multiplicities(*kwarg)
-        self.cg_folder = self.cg_database_folder + '/' + ''.join([str(ir) for ir in self.chosen_irreps])
 
         if not Path(self.cg_folder).exists() or force_computation:
 
@@ -748,6 +771,8 @@ class cg_calc:
             if verbose:
                 print("\nSaving to file the cg coefficient to the database ...\n")
 
+            # New results always go to the output database, never to the bundled data.
+            self.cg_folder = self.cg_database_folder + '/' + product_name
             Path(self.cg_folder).mkdir(parents=True, exist_ok=True)
             Path(self.cg_folder + "_raw").mkdir(parents=True, exist_ok=True)
 
@@ -767,17 +792,22 @@ class cg_calc:
                 print("\nLoading the cg coefficients for the given tensor product from the database ...\n")
 
             self.raw_cg = {}
-            p = Path(self.cg_folder + "_raw").glob('**/*')
-            files = [x for x in p if x.is_file()]
+            # A changed prescription is saved like a new result: to the output database,
+            # together with the raw matrices it is derived from.
+            out_folder = self.cg_database_folder + '/' + product_name
+            if prescription_changed:
+                Path(out_folder).mkdir(parents=True, exist_ok=True)
+                Path(out_folder + "_raw").mkdir(parents=True, exist_ok=True)
 
-            for _, file in enumerate(files):
-                irep = int(file.name.split(".")[0].split("_")[0])
-                m = int(file.name.split(".")[0].split("_")[1])
-                with open(f'{self.cg_folder}_raw/{file.name}', 'rb') as f:
-                    self.raw_cg[(irep, m)] = np.load(f, allow_pickle=True)
+            for file in _sorted_cg_files(self.cg_folder + "_raw"):
+                irep, m = (int(x) for x in file.stem.split("_"))
+                self.raw_cg[(irep, m)] = np.load(file, allow_pickle=True)
 
                 if prescription_changed:
-                    with open(f'{self.cg_folder}/{irep}_{m}.npy', 'wb') as f:
+                    if out_folder != self.cg_folder:
+                        with open(f'{out_folder}_raw/{irep}_{m}.npy', 'wb') as f:
+                            np.save(f, self.raw_cg[(irep, m)])
+                    with open(f'{out_folder}/{irep}_{m}.npy', 'wb') as f:
                         if enforce_symmetry is True:
                             symm_mat = force_symmetry_gamma(
                                 self.raw_cg[(irep, m)],
@@ -802,19 +832,15 @@ class cg_calc:
                         else:
                             np.save(f, CGmat_from_block(self.raw_cg[(irep, m)], m, self.mul_list[irep]))
 
+            if prescription_changed:
+                self.cg_folder = out_folder
+
+            # Files come in (irep, m) order, so cg_dict[irep][m] is always '{irep}_{m}.npy'
+            # and the keys are sorted.
             self.cg_dict = {}
-            p = Path(self.cg_folder).glob('**/*')
-            files = [x for x in p if x.is_file()]
-
-            for _, file in enumerate(files):
-                irep = int(file.name.split(".")[0].split("_")[0])
-                with open(f'{self.cg_folder}/{file.name}', 'rb') as f:
-                    if irep not in self.cg_dict.keys():
-                        self.cg_dict[irep] = [np.load(f, allow_pickle=True)]
-                    else:
-                        self.cg_dict[irep].append(np.load(f, allow_pickle=True))
-
-            self.cg_dict = {k: self.cg_dict[k] for k in sorted(list(self.cg_dict.keys()))}
+            for file in _sorted_cg_files(self.cg_folder):
+                irep = int(file.stem.split("_")[0])
+                self.cg_dict.setdefault(irep, []).append(np.load(file, allow_pickle=True))
 
     def get_multiplicities(self) -> list[int]:
         """Return the multiplicity list for the tensor product under study."""
@@ -1074,7 +1100,7 @@ def force_symmetry_gamma(
         for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list])):
             actual_parity = 1
             for j, ind in enumerate(indices):
-                actual_parity *= gamma_list[irrep_index[irrep_indices[j]]][ind, ind]
+                actual_parity *= np.atleast_2d(gamma_list[irrep_index[irrep_indices[j]]])[ind, ind]
             if actual_parity != desired_gamma_parity:
                 monom = sym.Add.make_args(out_mat[i_row, i_col])[0].as_coeff_Mul()[1]
                 if monom not in bad_monoms:
@@ -1113,7 +1139,7 @@ def force_symmetry_alpha(
         for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list])):
             transf_indices = tuple(
                 [
-                    np.where(alpha_list[irrep_index[irrep_indices[j]]][:, ind] != 0)[0][0]
+                    np.where(np.atleast_2d(alpha_list[irrep_index[irrep_indices[j]]])[:, ind] != 0)[0][0]
                     for j, ind in enumerate(indices)
                 ]
             )
@@ -1157,7 +1183,8 @@ def force_symmetry_beta(
         for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list])):
             remove_entry = True
             transf_indices_generating_list = [
-                np.where(beta_list[irrep_index[irrep_indices[j]]][:, ind] != 0)[0] for j, ind in enumerate(indices)
+                np.where(np.atleast_2d(beta_list[irrep_index[irrep_indices[j]]])[:, ind] != 0)[0]
+                for j, ind in enumerate(indices)
             ]
             for non_zero_transf_ind in it.product(*[range(len(e)) for e in transf_indices_generating_list]):
                 transf_indices = tuple(
@@ -1206,7 +1233,7 @@ if __name__ == "__main__":
         except ValueError:
             print(f"\nSpecified n was {sys.argv[1]}, proceeding with n={n}\n")
 
-    which = "both"
+    which = "all"
     if len(sys.argv) > 2:
         if str(sys.argv[2]) in ["vector", "axial", "tensor", "all"]:
             which = str(sys.argv[2])

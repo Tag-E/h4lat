@@ -142,7 +142,12 @@ for irep_idx, matrices in cg.cg_dict.items():
 cg = cg_calc((6, 1), (4, 1), (4, 1))
 ```
 
-Pass `cgdatabase="/path/to/custom/db"` to store results outside the package.
+New results are written to `./cg_database` in the working directory (H(4) matrices
+regenerated with `force_h4gen=True` go to `./h4_ele`), never into the installed package.
+Later calls read the bundled data first, then `./cg_database`.  To update the bundled
+data, copy these folders into `src/h4lat/data/`, or regenerate them with
+`python scripts/regenerate_data.py` (see `--help`).  Pass `cgdatabase="/path/to/custom/db"`
+to read and write a custom database instead.
 
 ### Constructing lattice operators
 
@@ -299,6 +304,10 @@ embed a single operator inside a larger, custom HDF5 layout of your own.
 
 * Baake et al. (1982) — H(4) irreps, character table, generator matrices:
   *J. Math. Phys.* **23**, 944.  <https://doi.org/10.1063/1.525461>
+  Note: for the irrep (2,2), h4lat now uses the generator α = diag(1, −1), which differs
+  from the one given in this reference (the identity matrix, used by h4lat until October 2026).
+  We believe the reference is wrong here: with α = 𝟙 the generators do not satisfy the S(4)
+  relation (αβ)³ = 1, so they do not define a representation of H(4).
 * Sakata (1974) — CG coefficient projection formula:
   *J. Math. Phys.* **15**, 1702.  <https://doi.org/10.1063/1.1666528>
 * Göckeler et al. (1996) — lattice operators:
