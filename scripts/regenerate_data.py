@@ -11,13 +11,17 @@ Each stage is computed in a work directory; the files whose content changed (bey
 floating-point noise) are then copied over the bundled data, which git tracks: review
 the result with `git status src/h4lat/data` and throw it away with
 `git checkout -- src/h4lat/data`.  CG coefficients are always computed from the
-generators in the code (force_h4gen), never from stale bundled matrices.
+generators in the code (force_h4gen), never from stale bundled matrices.  With
+--from-raw, the cg stage instead only re-applies CGmat_from_block to the bundled raw
+blocks (`{product}_raw/`), which takes seconds: use it when CGmat_from_block changed
+but the generators did not.
 
 Examples (from the repository root, with h4lat installed with `pip install -e .`):
 
   python scripts/regenerate_data.py all --jobs 6
   python scripts/regenerate_data.py h4
   python scripts/regenerate_data.py cg --products "(6,1),(4,1)" "(4,1),(4,1)"
+  python scripts/regenerate_data.py cg --from-raw
   python scripts/regenerate_data.py operators
 
 Then run `python -m pytest tests/test_cg_correctness.py` (and the full suite) and
@@ -172,24 +176,43 @@ def regenerate_h4(data, workdir):
     install(workdir / "h4_ele", data / "h4_ele")
 
 
-def compute_product(product, cg_database, scratch, verbose):
-    """Compute the CG coefficients of one product into *cg_database* (runs in a worker process)."""
+def compute_product(product, cg_database, scratch, verbose, raw_source=None):
+    """Compute the CG coefficients of one product into *cg_database* (runs in a worker process).
+
+    With *raw_source* (a CG database), the raw blocks of the product are taken from there
+    and only CGmat_from_block is re-applied to them.
+    """
     from h4lat import cg_calc
 
     scratch.mkdir(parents=True, exist_ok=True)
     start = time.time()
     with contextlib.chdir(scratch):
-        # force_h4gen: matrices from the generators in the code, written to the scratch ./h4_ele
-        cg_calc(*product, cgdatabase=str(cg_database), force_computation=True, force_h4gen=True, verbose=verbose)
+        if raw_source is not None:
+            name = product_name(product)
+            shutil.rmtree(cg_database / name, ignore_errors=True)
+            shutil.rmtree(cg_database / (name + "_raw"), ignore_errors=True)
+            shutil.copytree(raw_source / (name + "_raw"), cg_database / (name + "_raw"))
+            (cg_database / name).mkdir(parents=True)
+            # prescription_changed: the final blocks are rebuilt from the raw ones
+            cg_calc(*product, cgdatabase=str(cg_database), prescription_changed=True, verbose=verbose)
+        else:
+            # force_h4gen: matrices from the generators in the code, written to the scratch ./h4_ele
+            cg_calc(*product, cgdatabase=str(cg_database), force_computation=True, force_h4gen=True, verbose=verbose)
     shutil.rmtree(scratch)
     return time.time() - start
 
 
-def regenerate_cg(data, workdir, products, jobs):
+def regenerate_cg(data, workdir, products, jobs, from_raw=False):
     """Recompute the CGs of *products*, installing each one as soon as it is done.
 
+    With *from_raw*, only the final blocks are rebuilt, from the bundled raw blocks.
     Returns the products that failed.
     """
+    raw_source = data / "cg_database" if from_raw else None
+    if from_raw:
+        missing = [p for p in products if not (raw_source / (product_name(p) + "_raw")).is_dir()]
+        if missing:
+            raise SystemExit(f"cg: no bundled raw blocks for {', '.join(product_name(p) for p in missing)}")
     cg_database = workdir / "cg_database"
     if jobs > 1:
         os.environ["TQDM_DISABLE"] = "1"  # no interleaved progress bars: tqdm reads it when a worker imports it
@@ -202,7 +225,7 @@ def regenerate_cg(data, workdir, products, jobs):
         for p in todo:
             # with one job, cg_calc output and progress bar are shown (otherwise they would interleave)
             scratch = workdir / "scratch" / product_name(p)
-            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1)] = p
+            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1, raw_source)] = p
             log.info("cg: queued %s", product_name(p))
         for future in as_completed(futures):
             p = futures[future]
@@ -295,6 +318,11 @@ def main(argv=None):
         metavar="PRODUCT",
         help='CG products for the cg stage, e.g. "(6,1),(4,1)" (default: all bundled products)',
     )
+    parser.add_argument(
+        "--from-raw",
+        action="store_true",
+        help="cg stage: only rebuild the final blocks from the bundled raw blocks (no projection)",
+    )
     parser.add_argument("--jobs", type=int, default=1, help="CG products computed in parallel (default: 1)")
     parser.add_argument("--max-n", type=int, default=3, help="max_n of the operator database (default: 3)")
     parser.add_argument(
@@ -332,7 +360,7 @@ def main(argv=None):
     if "h4" in args.stages or "all" in args.stages:
         regenerate_h4(data, workdir)
     if "cg" in args.stages or "all" in args.stages:
-        failed = regenerate_cg(data, workdir, products, args.jobs)
+        failed = regenerate_cg(data, workdir, products, args.jobs, from_raw=args.from_raw)
         if failed:
             log.error("cg: failed: %s; rerun them with --products", ", ".join(product_name(p) for p in failed))
             return 1

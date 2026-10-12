@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import sympy as sym
 
 import h4lat.cg_calculator as cc
 from h4lat import cg_calc, char_table, class_orders, irrep_index, rep_dim_list, rep_label_list
@@ -22,16 +23,6 @@ BUNDLED_PRODUCTS = [
     ((4, 4), (4, 1), (4, 1)),
     ((6, 1), (4, 1), (4, 1)),
 ]
-
-# Known bug, independent of the data: for multiplicity > 1, CGmat_from_block picks the free
-# monomials by their position in sympy's term order and zeroes the entries with fewer terms, so
-# the copies it extracts from a (correct) raw block can be dependent or not invariant, and they
-# change with the sympy version.  The four (4,1) copies in (4,1)⊗(4,1)⊗(4,1) span only 12 of 16
-# dimensions (copy 0 = copy 3 + copy 2 / 3), so the δ_jk δ_iμ multiplet is missing; in
-# (6,1)⊗(4,1)⊗(4,1) the (3,1) and (3,4) copies are not invariant and the 6-dim copies are dependent.
-KNOWN_NOT_INVARIANT = [((6, 1), (4, 1), (4, 1))]
-KNOWN_INCOMPLETE = [((4, 1), (4, 1), (4, 1)), ((6, 1), (4, 1), (4, 1))]
-KNOWN = "known bug: dependent or non-invariant multiplicity copies from CGmat_from_block (multiplicity > 1)"
 
 TINY = ((2, 1), (2, 1))  # 4-dimensional product, computed in a few seconds
 
@@ -75,7 +66,11 @@ def _product_matrices(h4, irreps):
 
 
 def _assert_blocks_transform_as_their_irrep(h4, irreps, cg_dict):
-    """Each CG block C spans an invariant subspace, T(g) C = C M(g), with tr M(g) = χ(g) of its irrep."""
+    """Each CG block C spans an invariant subspace, T(g) C = C M(g), with tr M(g) = χ(g) of its irrep.
+
+    Moreover, with its columns scaled to unit norm (CGmat_from_block scales each column
+    separately), C transforms exactly with the matrices of its irrep: T(g) C = C D(g).
+    """
     T = _product_matrices(h4, irreps)
     for irep, blocks in cg_dict.items():
         chi = np.trace(h4[irep], axis1=1, axis2=2)
@@ -86,6 +81,8 @@ def _assert_blocks_transform_as_their_irrep(h4, irreps, cg_dict):
             assert np.allclose(
                 np.trace(M, axis1=1, axis2=2), chi
             ), f"block {irep}_{m} does not transform as {rep_label_list[irep]}"
+            unit = C / np.linalg.norm(C, axis=0)
+            assert np.allclose(T @ unit, unit @ h4[irep]), f"block {irep}_{m} is not in the basis of D(g)"
 
 
 def _assert_blocks_are_independent(irreps, cg_dict):
@@ -200,16 +197,64 @@ def test_bundled_h4_ele_matches_generators(h4, bundled_h4, label):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS, (KNOWN_NOT_INVARIANT, KNOWN)))
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
 def test_bundled_cg_blocks_transform_as_their_irrep(h4, irreps):
     """Each bundled CG block spans an invariant subspace that transforms as its irrep."""
     _assert_blocks_transform_as_their_irrep(h4, irreps, cg_calc(*irreps, verbose=False).cg_dict)
 
 
-@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS, (KNOWN_INCOMPLETE, KNOWN)))
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
 def test_bundled_cg_blocks_are_independent(irreps):
     """Together the bundled CG blocks span the whole tensor-product space."""
     _assert_blocks_are_independent(irreps, cg_calc(*irreps, verbose=False).cg_dict)
+
+
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
+def test_bundled_cg_blocks_match_their_raw_blocks(irreps):
+    """The bundled final blocks are CGmat_from_block of the bundled raw blocks (not stale)."""
+    cg = cg_calc(*irreps, verbose=False)
+    for (irep, m), raw in cg.raw_cg.items():
+        expected = cc.CGmat_from_block(raw, cg.mul_list[irep], m)
+        assert np.allclose(cg.cg_dict[irep][m], expected), f"block {irep}_{m} {rep_label_list[irep]}"
+
+
+# ---------------------------------------------------------------------------
+# CGmat_from_block
+# ---------------------------------------------------------------------------
+
+
+def _symbolic_block(coefficients):
+    """A symbolic block whose entry (r, c) is Σ_k coefficients[r][c][k] A[0, k]."""
+    coefficients = np.asarray(coefficients, dtype=float)
+    A = sym.MatrixSymbol('A', 1, coefficients.shape[2])
+    block = np.empty(coefficients.shape[:2], dtype=object)
+    for r, c in np.ndindex(block.shape):
+        block[r, c] = sum((x * A[0, k] for k, x in enumerate(coefficients[r, c]) if x), sym.S.Zero)
+    return block
+
+
+def test_cgmat_from_block_with_opposite_entries():
+    """Multiplicity 1 with entries ℓ and -ℓ (different sympy expressions, one degree of freedom)."""
+    ell = [2.0, -1.0, 0.5]
+    block = _symbolic_block([[ell, ell], [[0, 0, 0], ell], [[-x for x in ell], [0, 0, 0]]])
+    C = cc.CGmat_from_block(block, multiplicity=1, multiplicity_index=0)
+    assert np.allclose(C, [[1, 1], [0, 1], [-1, 0]])
+
+
+def test_cgmat_from_block_gives_independent_copies():
+    """With multiplicity 2 the copies are independent, even if the entries share symbols."""
+    a, b = [1.0, 1.0, 0.0], [0.0, 1.0, 1.0]  # independent linear forms with the symbol A[0, 1] in common
+    block = _symbolic_block([[a], [b], [[x + y for x, y in zip(a, b)]]])
+    copies = [cc.CGmat_from_block(block, multiplicity=2, multiplicity_index=m) for m in range(2)]
+    assert np.allclose(copies[0], [[1], [0], [1]])
+    assert np.allclose(copies[1], [[0], [1], [1]])
+
+
+def test_cgmat_from_block_rejects_a_wrong_multiplicity():
+    """A block with one degree of freedom is not two copies."""
+    block = _symbolic_block([[[1.0, 2.0]], [[2.0, 4.0]]])
+    with pytest.raises(ValueError, match="multiplicity 2"):
+        cc.CGmat_from_block(block, multiplicity=2, multiplicity_index=0)
 
 
 @pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))

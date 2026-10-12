@@ -34,6 +34,7 @@ operator_catalogue.pdf
 
 # Local notes and work directory of scripts/regenerate_data.py
 /REGENERATE_DATA.txt
+/CGMAT_FROM_BLOCK.txt
 /regenerated_data/
 
 # Claude Code session data

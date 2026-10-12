@@ -31,7 +31,8 @@ CG coefficients are computed via the projection formula of Sakata (1974)
 [J. Math. Phys. 15, 1702]: summing the tensor-product matrices against the
 target irrep matrices over all group elements extracts the CG vectors
 symbolically.  The resulting free parameters (freedom within degenerate
-subspaces) are fixed by the prescription in CGmat_from_block.
+subspaces) are fixed by CGmat_from_block, which picks one independent copy
+of the irrep for each unit of multiplicity.
 
 Main entry point: cg_calc.
 Module-level helpers: get_multiplicities, latex_print_multiplicities.
@@ -45,7 +46,6 @@ import sys
 import time
 from importlib.resources import files as _resource_files
 from pathlib import Path
-from statistics import mode
 
 import numpy as np
 import sympy as sym
@@ -503,7 +503,6 @@ class cg_calc:
         force_computation: bool = False,
         force_h4gen: bool = False,
         prescription_changed: bool = False,
-        enforce_symmetry: bool = True,
         verbose: bool = True,
     ) -> None:
         """
@@ -524,10 +523,9 @@ class cg_calc:
             Recompute all H(4) matrix representations from the generators and save
             them to ./h4_ele instead of loading the bundled ones.
         prescription_changed : bool
-            Re-apply CGmat_from_block to the raw symbolic matrices and save the new
-            numerical matrices to the output database (see cgdatabase).
-        enforce_symmetry : bool
-            Zero out entries incompatible with alpha/gamma symmetry (default True).
+            Re-apply CGmat_from_block to the stored raw symbolic matrices (without
+            recomputing them) and save the new numerical matrices to the output
+            database (see cgdatabase).
         verbose : bool
             Print progress messages.
         """
@@ -727,30 +725,8 @@ class cg_calc:
                 for m in range(mul):
                     if irep not in self.cg_dict.keys():
                         self.cg_dict[irep] = []
-                    if enforce_symmetry is True:
-                        symm_mat = force_symmetry_gamma(
-                            rounded_res[:, d : d + rep_dim_list[irep]],
-                            rep_label_list[irep],
-                            list(self.chosen_irreps),
-                            remove_bad_monom=False,
-                        )
-                        symm_mat = force_symmetry_alpha(
-                            symm_mat,
-                            rep_label_list[irep],
-                            list(self.chosen_irreps),
-                            remove_bad_monom=False if self.mul_list[irep] == 1 else True,
-                        )
-                        symm_mat = force_symmetry_beta(
-                            symm_mat,
-                            rep_label_list[irep],
-                            list(self.chosen_irreps),
-                            remove_bad_monom=True,
-                            multiplicity=self.mul_list[irep],
-                        )
-                        self.cg_dict[irep].append(CGmat_from_block(symm_mat, m, mul))
-                    else:
-                        self.cg_dict[irep].append(CGmat_from_block(rounded_res[:, d : d + rep_dim_list[irep]], m, mul))
                     self.raw_cg[(irep, m)] = rounded_res[:, d : d + rep_dim_list[irep]]
+                    self.cg_dict[irep].append(CGmat_from_block(self.raw_cg[(irep, m)], mul, m))
                     d += rep_dim_list[irep]
 
             time_end_evaluation = time.time()
@@ -808,29 +784,7 @@ class cg_calc:
                         with open(f'{out_folder}_raw/{irep}_{m}.npy', 'wb') as f:
                             np.save(f, self.raw_cg[(irep, m)])
                     with open(f'{out_folder}/{irep}_{m}.npy', 'wb') as f:
-                        if enforce_symmetry is True:
-                            symm_mat = force_symmetry_gamma(
-                                self.raw_cg[(irep, m)],
-                                rep_label_list[irep],
-                                list(self.chosen_irreps),
-                                remove_bad_monom=False,
-                            )
-                            symm_mat = force_symmetry_alpha(
-                                symm_mat,
-                                rep_label_list[irep],
-                                list(self.chosen_irreps),
-                                remove_bad_monom=False if self.mul_list[irep] == 1 else True,
-                            )
-                            symm_mat = force_symmetry_beta(
-                                symm_mat,
-                                rep_label_list[irep],
-                                list(self.chosen_irreps),
-                                remove_bad_monom=True,
-                                multiplicity=self.mul_list[irep],
-                            )
-                            np.save(f, CGmat_from_block(symm_mat, m, self.mul_list[irep]))
-                        else:
-                            np.save(f, CGmat_from_block(self.raw_cg[(irep, m)], m, self.mul_list[irep]))
+                        np.save(f, CGmat_from_block(self.raw_cg[(irep, m)], self.mul_list[irep], m))
 
             if prescription_changed:
                 self.cg_folder = out_folder
@@ -955,265 +909,121 @@ def latex_print_multiplicities(
     return out_str if return_str else None
 
 
-def CGmat_from_block(block: np.ndarray, m: int = 0, mul: int = 1, gram_schmidt: bool = False) -> np.ndarray:
+def CGmat_from_block(
+    block: np.ndarray,
+    multiplicity: int,
+    multiplicity_index: int,
+    normalize: bool = True,
+    threshold: float = 1e-10,
+) -> np.ndarray:
     """
-    Convert a symbolic CG block (output of the projection formula) to a
-    numerical matrix by choosing one free parameter = 1 and the rest = 0.
+    Extract one numerical copy of an irrep from a symbolic CG block.
 
     Parameters
     ----------
     block : ndarray
-        Symbolic matrix from the CG projection formula.
-    m : int
-        Index (0 … mul-1) selecting which multiplicity copy to extract.
-    mul : int
-        Total multiplicity of the irrep.
-    gram_schmidt : bool
-        If True, Gram–Schmidt orthogonalise the columns.
+        Symbolic block from the projection formula, of shape (dim of the tensor
+        product, dim of the irrep) (a 1-D block is read as a single column).  Each
+        entry is a linear combination of the free symbols A[i, j].
+    multiplicity : int
+        Multiplicity of the irrep in the tensor product.
+    multiplicity_index : int
+        Which copy (0 … multiplicity-1) to extract.
+    normalize : bool
+        Divide each column by the absolute value of its first non-zero entry.
+    threshold : float
+        Entries smaller than this are set to zero (floating-point noise).
+
+    Returns
+    -------
+    ndarray
+        Float matrix of the same shape as *block*, whose columns span one copy of
+        the irrep.
+
+    Raises
+    ------
+    ValueError
+        If the free parameters of the block do not have *multiplicity* degrees of
+        freedom, i.e. the block is not a projection onto *multiplicity* copies.
 
     Notes
     -----
-    The symbolic block from the projection formula contains one or more free
-    sympy monomials A_{ij} (the freedom within degenerate subspaces).
-    The degeneracy is resolved by setting one monomial to 1 and the rest to 0.
-    For multiplicity 1, the monomial appearing in the most rows is chosen
-    (maximally constrained selection).  For multiplicity > 1, a mode-based
-    rule distributes the degrees of freedom evenly across the mul copies.
-    Each column is subsequently normalised so its leading non-zero entry is +1.
+    The projection formula gives block = P(A), linear in the matrix of symbols A,
+    and P(A) is an exact Clebsch-Gordan block for *any* numerical value of A: the
+    symbols only parametrise the multiplicity-dimensional space of copies.  By
+    Schur's lemma a copy is fixed by its first column, so the entries of column 0,
+    as linear forms in A, span exactly *multiplicity* dimensions.
+
+    The copies are chosen as follows: take the first *multiplicity* rows of column 0
+    whose linear forms are linearly independent (the reference rows), and for copy m
+    choose the A (of minimal norm) that makes reference row i equal to δ_{i,m}.
+    Copy m is then non-zero at reference row m and zero at the others, so the copies
+    are independent, and each is an exact CG block because it is P(A) for one A.
+    Everything is done on the numerical coefficients of the symbols, so the result
+    does not depend on how sympy orders the terms of an expression.
+
+    With multiplicity 1 there is a single copy, the same for any A up to a factor;
+    the factor is fixed by the first non-zero entry of column 0 being +1.
     """
-    mat = block.copy()
 
-    if len(np.shape(mat)) == 1:
-        mat = np.reshape(mat, (np.shape(mat)[0], 1))
+    # a 1-D block is a single column
+    mat = np.asarray(block, dtype=object)
+    if mat.ndim == 1:
+        mat = mat.reshape(-1, 1)
+    nrows, ncols = mat.shape
 
-    monom_counts = {}
-    monom_rows = {}
-    for i in range(np.shape(mat)[0]):
-        entry = sym.Add.make_args(mat[i, 0])
-        for element in entry:
-            monom = element.as_coeff_Mul()[1]
-            if (monom not in monom_counts) and (not isinstance(monom, sym.core.numbers.One)):
-                monom_counts[monom] = 1
-                monom_rows[monom] = [i]
-            elif (monom in monom_counts) and (not isinstance(monom, sym.core.numbers.One)):
-                monom_counts[monom] += 1
-                monom_rows[monom].append(i)
+    # coefficients of every entry, {symbol A[i, j]: coefficient}; constant terms (key 1)
+    # cannot appear in a projection, which is linear in A
+    coeff_dicts = [[sym.sympify(entry).as_coefficients_dict() for entry in row] for row in mat]
+    symbols = sorted(
+        {s for row in coeff_dicts for coeffs in row for s in coeffs if s != 1},
+        key=lambda s: (int(s.i), int(s.j)),
+    )
+    symbol_index = {s: k for k, s in enumerate(symbols)}
 
-    entry_sizes = np.zeros(shape=np.shape(mat), dtype=int)
-    monoms_in_column = {}
-    for j in range(np.shape(mat)[1]):
-        monoms_in_column[j] = []
-        for i in range(np.shape(mat)[0]):
-            entry = sym.Add.make_args(mat[i, j])
-            entry_sizes[i, j] = len(entry)
-            for element in entry:
-                monom = element.as_coeff_Mul()[1]
-                if monom not in monoms_in_column[j]:
-                    monoms_in_column[j].append(monom)
+    # L[r, c, k] = coefficient of the k-th symbol in entry (r, c), so that block = L @ A
+    # once A is flattened in the order of symbols
+    L = np.zeros((nrows, ncols, len(symbols)))
+    for r in range(nrows):
+        for c in range(ncols):
+            for s, coeff in coeff_dicts[r][c].items():
+                if s != 1:
+                    L[r, c, symbol_index[s]] = float(coeff)
 
-    for k in monom_counts.keys():
-        for j in range(np.shape(mat)[1]):
-            if k not in monoms_in_column[j]:
-                monom_counts[k] = -1
+    # column 0 fixes the copy: its linear forms must span exactly `multiplicity` dimensions
+    L0 = L[:, 0, :]
+    tol = threshold * max(1.0, np.abs(L0).max())
+    rank = np.linalg.matrix_rank(L0, tol=tol) if len(symbols) else 0
+    if rank != multiplicity:
+        raise ValueError(
+            f"column 0 of the block has {rank} independent entries, expected the multiplicity {multiplicity}"
+        )
 
-    monom_dict = {}
-    for j in range(np.shape(mat)[1]):
-        for i in range(np.shape(mat)[0]):
-            entry = sym.Add.make_args(mat[i, j])
-            for element in entry:
-                monom = element.as_coeff_Mul()[1]
-                if (monom not in monom_dict) and (not isinstance(monom, sym.core.numbers.One)):
-                    monom_dict[monom] = 0.0
+    # reference rows: the first rows of column 0 (in row order) with independent linear forms
+    ref_rows = []
+    for r in range(nrows):
+        if np.linalg.matrix_rank(L0[ref_rows + [r]], tol=tol) > len(ref_rows):
+            ref_rows.append(r)
+            if len(ref_rows) == multiplicity:
+                break
 
-    newmat = mat.copy()
+    # the A of minimal norm with reference row i of column 0 equal to δ_{i, multiplicity_index}
+    target = np.zeros(multiplicity)
+    target[multiplicity_index] = 1.0
+    a = np.linalg.pinv(L0[ref_rows]) @ target
 
-    if mul == 1:
-        index_list = [max(monom_counts, key=monom_counts.get)]
-        monom_dict[index_list[m]] = 1.0
-    else:
-        max_len = mode([e for e in entry_sizes.flatten() if e != 1])
-        for j in range(np.shape(mat)[1]):
-            for i in range(np.shape(mat)[0]):
-                if entry_sizes[i, j] < max_len:
-                    newmat[i, j] = sym.core.numbers.Zero()
-
-        index_list = []
-        occurrences_mode = mode([v for v in monom_counts.values() if v > 0])
-        for k in monom_counts:
-            if monom_counts[k] == occurrences_mode:
-                index_list.append(k)
-        monom_dict[index_list[int((m + 1 / 2) * len(index_list) / mul)]] = 1.0
-
-    for j in range(np.shape(mat)[1]):
-        for i in range(np.shape(mat)[0]):
-            tmp = newmat[i, j]
-            for k, v in monom_dict.items():
-                tmp = tmp.subs(k, v)
-            newmat[i, j] = tmp
-
-    for j in range(np.shape(newmat)[1]):
-        index = (newmat[:, j] != 0).argmax(axis=0)
-        norm = newmat[index, j]
-        newmat[:, j] /= np.abs(norm)
-
-    if gram_schmidt is True:
-        for j in range(np.shape(newmat)[1]):
-            for jp in range(j):
-                newmat[:, j] = (
-                    newmat[:, j]
-                    - np.dot(newmat[:, jp], newmat[:, j]) / np.dot(newmat[:, jp], newmat[:, jp]) * newmat[:, jp]
-                )
-            newmat[:, j] /= newmat[(newmat[:, j] != 0).argmax(axis=0), j]
-
-    newmat = np.asarray(newmat).astype(np.float64)
-    threshold = 10 ** (-10)
-
-    for j in range(np.shape(newmat)[1]):
-        index = np.abs(newmat[:, j]).argmax(axis=0)
-        norm = np.abs(newmat[index, j])
-        if norm > 1 / threshold:
-            newmat[:, j] /= norm
-
+    # the copy: the block evaluated at that A
+    newmat = L @ a
     newmat[np.abs(newmat) < threshold] = 0.0
 
+    # each column scaled so that its first non-zero entry is ±1
+    if normalize:
+        for j in range(ncols):
+            first = np.flatnonzero(newmat[:, j])[0]
+            newmat[:, j] /= np.abs(newmat[first, j])
+        newmat[np.abs(newmat) < threshold] = 0.0
+
     return newmat
-
-
-def force_symmetry_gamma(
-    cg_symbolic_mat: np.ndarray,
-    irrep_mat: tuple[int, int],
-    irrep_indices: list[tuple[int, int]],
-    remove_bad_monom: bool = False,
-) -> np.ndarray:
-    """Zero entries of the symbolic CG matrix incompatible with gamma symmetry."""
-    generator_gamma_mat = gamma_list[irrep_index[irrep_mat]]
-    if generator_gamma_mat.ndim == 1:
-        generator_gamma_mat = np.array([generator_gamma_mat])
-
-    dim_list = [irrep[0] for irrep in irrep_indices]
-    nrows, ncols = np.shape(cg_symbolic_mat)
-    bad_monoms = []
-    out_mat = cg_symbolic_mat.copy()
-
-    for i_col in range(ncols):
-        desired_gamma_parity = generator_gamma_mat[i_col, i_col]
-        for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list])):
-            actual_parity = 1
-            for j, ind in enumerate(indices):
-                actual_parity *= np.atleast_2d(gamma_list[irrep_index[irrep_indices[j]]])[ind, ind]
-            if actual_parity != desired_gamma_parity:
-                monom = sym.Add.make_args(out_mat[i_row, i_col])[0].as_coeff_Mul()[1]
-                if monom not in bad_monoms:
-                    bad_monoms.append(monom)
-                out_mat[i_row, i_col] = sym.core.numbers.Zero()
-
-    if remove_bad_monom is True:
-        for i_row in range(nrows):
-            for i_col in range(ncols):
-                for monom in bad_monoms:
-                    out_mat[i_row, i_col] = out_mat[i_row, i_col].subs({monom: 0})
-
-    return out_mat
-
-
-def force_symmetry_alpha(
-    cg_symbolic_mat: np.ndarray,
-    irrep_mat: tuple[int, int],
-    irrep_indices: list[tuple[int, int]],
-    remove_bad_monom: bool = False,
-) -> np.ndarray:
-    """Zero entries of the symbolic CG matrix incompatible with alpha symmetry."""
-    generator_alpha_mat = alpha_list[irrep_index[irrep_mat]]
-    if generator_alpha_mat.ndim == 1:
-        generator_alpha_mat = np.array([generator_alpha_mat])
-
-    dim_list = [irrep[0] for irrep in irrep_indices]
-    nrows, ncols = np.shape(cg_symbolic_mat)
-    bad_monoms = []
-    out_mat = cg_symbolic_mat.copy()
-
-    row_ind_dict = {indices: i_row for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list]))}
-
-    for i_col in range(ncols):
-        transf_col = np.where(generator_alpha_mat[:, i_col] != 0)[0][0]
-        for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list])):
-            transf_indices = tuple(
-                [
-                    np.where(np.atleast_2d(alpha_list[irrep_index[irrep_indices[j]]])[:, ind] != 0)[0][0]
-                    for j, ind in enumerate(indices)
-                ]
-            )
-            transf_row = row_ind_dict[transf_indices]
-            if out_mat[transf_row, transf_col] == sym.core.numbers.Zero():
-                monom = sym.Add.make_args(out_mat[i_row, i_col])[0].as_coeff_Mul()[1]
-                if monom not in bad_monoms:
-                    bad_monoms.append(monom)
-                out_mat[i_row, i_col] = sym.core.numbers.Zero()
-
-    if remove_bad_monom is True:
-        for i_row in range(nrows):
-            for i_col in range(ncols):
-                for monom in bad_monoms:
-                    out_mat[i_row, i_col] = out_mat[i_row, i_col].subs({monom: 0})
-
-    return out_mat
-
-
-def force_symmetry_beta(
-    cg_symbolic_mat: np.ndarray,
-    irrep_mat: tuple[int, int],
-    irrep_indices: list[tuple[int, int]],
-    remove_bad_monom: bool = False,
-    multiplicity: int = 1,
-) -> np.ndarray:
-    """Zero entries of the symbolic CG matrix incompatible with beta symmetry."""
-    generator_beta_mat = beta_list[irrep_index[irrep_mat]]
-    if generator_beta_mat.ndim == 1:
-        generator_beta_mat = np.array([generator_beta_mat])
-
-    dim_list = [irrep[0] for irrep in irrep_indices]
-    nrows, ncols = np.shape(cg_symbolic_mat)
-    bad_monoms = []
-    out_mat = cg_symbolic_mat.copy()
-
-    row_ind_dict = {indices: i_row for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list]))}
-
-    for i_col in range(ncols):
-        transf_col_list = np.where(generator_beta_mat[:, i_col] != 0)[0]
-        for i_row, indices in enumerate(it.product(*[range(dim) for dim in dim_list])):
-            remove_entry = True
-            transf_indices_generating_list = [
-                np.where(np.atleast_2d(beta_list[irrep_index[irrep_indices[j]]])[:, ind] != 0)[0]
-                for j, ind in enumerate(indices)
-            ]
-            for non_zero_transf_ind in it.product(*[range(len(e)) for e in transf_indices_generating_list]):
-                transf_indices = tuple(
-                    [e[non_zero_transf_ind[i_ind]] for i_ind, e in enumerate(transf_indices_generating_list)]
-                )
-                transf_row = row_ind_dict[transf_indices]
-                for transf_col in transf_col_list:
-                    if out_mat[transf_row, transf_col] != sym.core.numbers.Zero():
-                        remove_entry = False
-
-            if remove_entry is True:
-                if multiplicity == 1:
-                    monom = sym.Add.make_args(out_mat[i_row, i_col])[0].as_coeff_Mul()[1]
-                    if monom not in bad_monoms:
-                        bad_monoms.append(monom)
-                else:
-                    monom_list = [e.as_coeff_Mul()[1] for e in sym.Add.make_args(out_mat[i_row, i_col])]
-                    for monom in monom_list:
-                        if monom not in bad_monoms:
-                            bad_monoms.append(monom)
-                out_mat[i_row, i_col] = sym.core.numbers.Zero()
-
-    if remove_bad_monom is True:
-        for i_row in range(nrows):
-            for i_col in range(ncols):
-                for monom in bad_monoms:
-                    out_mat[i_row, i_col] = out_mat[i_row, i_col].subs({monom: 0})
-
-    return out_mat
 
 
 def print_CGmat(cgmat: np.ndarray, digits: int = 5) -> None:
