@@ -23,9 +23,9 @@ BUNDLED_PRODUCTS = [
     ((6, 1), (4, 1), (4, 1)),
 ]
 
-# The bundled h4_ele/ and cg_database/ were generated before the generator fix of H4L-D9.
-# Empty these three lists once src/h4lat/data/ has been regenerated.
-STALE_H4_ELE = [(2, 2), (6, 1), (6, 2), (6, 3), (6, 4)]
+# The bundled cg_database/ was generated before the generator fix of H4L-D9 (h4_ele/ has
+# been regenerated since).  Empty the two STALE_CG lists once cg_database/ has been regenerated.
+STALE_H4_ELE = []
 STALE_CG_BLOCKS = [((6, 1), (4, 1)), ((6, 1), (4, 1), (4, 1))]
 STALE_CG_RANK = [((6, 1), (4, 1), (4, 1))]
 STALE = "bundled data predate the H4L-D9 generator fix: regenerate src/h4lat/data"
