@@ -36,6 +36,9 @@ operator_catalogue*.pdf
 /*.txt
 /regenerated_data/
 
+# Log files (e.g. of long nohup runs)
+*.log
+
 # Claude Code session data
 .claude/
 
