@@ -172,7 +172,7 @@ def regenerate_h4(data, workdir):
     install(workdir / "h4_ele", data / "h4_ele")
 
 
-def compute_product(product, cg_database, scratch):
+def compute_product(product, cg_database, scratch, verbose):
     """Compute the CG coefficients of one product into *cg_database* (runs in a worker process)."""
     from h4lat import cg_calc
 
@@ -180,7 +180,7 @@ def compute_product(product, cg_database, scratch):
     start = time.time()
     with contextlib.chdir(scratch):
         # force_h4gen: matrices from the generators in the code, written to the scratch ./h4_ele
-        cg_calc(*product, cgdatabase=str(cg_database), force_computation=True, force_h4gen=True, verbose=False)
+        cg_calc(*product, cgdatabase=str(cg_database), force_computation=True, force_h4gen=True, verbose=verbose)
     shutil.rmtree(scratch)
     return time.time() - start
 
@@ -200,7 +200,9 @@ def regenerate_cg(data, workdir, products, jobs):
     with ProcessPoolExecutor(max_workers=jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
         futures = {}
         for p in todo:
-            futures[pool.submit(compute_product, p, cg_database, workdir / "scratch" / product_name(p))] = p
+            # with one job, cg_calc output and progress bar are shown (otherwise they would interleave)
+            scratch = workdir / "scratch" / product_name(p)
+            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1)] = p
             log.info("cg: queued %s", product_name(p))
         for future in as_completed(futures):
             p = futures[future]

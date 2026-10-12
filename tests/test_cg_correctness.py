@@ -23,17 +23,15 @@ BUNDLED_PRODUCTS = [
     ((6, 1), (4, 1), (4, 1)),
 ]
 
-# The bundled cg_database/ was generated before the generator fix of H4L-D9 (h4_ele/ has
-# been regenerated since).  Empty the two STALE_CG lists once cg_database/ has been regenerated.
-STALE_H4_ELE = []
-STALE_CG_BLOCKS = [((6, 1), (4, 1)), ((6, 1), (4, 1), (4, 1))]
-STALE_CG_RANK = [((6, 1), (4, 1), (4, 1))]
-STALE = "bundled data predate the H4L-D9 generator fix: regenerate src/h4lat/data"
-
-# Known bug, independent of the data: the four (4,1) copies in (4,1)⊗(4,1)⊗(4,1) span only
-# 12 of 16 dimensions (copy 0 = copy 3 + copy 2 / 3), so the δ_jk δ_iμ multiplet is missing.
-KNOWN_INCOMPLETE = [((4, 1), (4, 1), (4, 1))]
-KNOWN = "known bug: dependent multiplicity copies from CGmat_from_block (multiplicity > 1)"
+# Known bug, independent of the data: for multiplicity > 1, CGmat_from_block picks the free
+# monomials by their position in sympy's term order and zeroes the entries with fewer terms, so
+# the copies it extracts from a (correct) raw block can be dependent or not invariant, and they
+# change with the sympy version.  The four (4,1) copies in (4,1)⊗(4,1)⊗(4,1) span only 12 of 16
+# dimensions (copy 0 = copy 3 + copy 2 / 3), so the δ_jk δ_iμ multiplet is missing; in
+# (6,1)⊗(4,1)⊗(4,1) the (3,1) and (3,4) copies are not invariant and the 6-dim copies are dependent.
+KNOWN_NOT_INVARIANT = [((6, 1), (4, 1), (4, 1))]
+KNOWN_INCOMPLETE = [((4, 1), (4, 1), (4, 1)), ((6, 1), (4, 1), (4, 1))]
+KNOWN = "known bug: dependent or non-invariant multiplicity copies from CGmat_from_block (multiplicity > 1)"
 
 TINY = ((2, 1), (2, 1))  # 4-dimensional product, computed in a few seconds
 
@@ -190,7 +188,7 @@ def test_generated_characters_match_char_table(h4):
     assert sorted(matched) == list(range(n_cls))
 
 
-@pytest.mark.parametrize("label", _params(rep_label_list, (STALE_H4_ELE, STALE)))
+@pytest.mark.parametrize("label", _params(rep_label_list))
 def test_bundled_h4_ele_matches_generators(h4, bundled_h4, label):
     """The bundled matrices are the ones generated from the current generators."""
     ir = irrep_index[label]
@@ -202,15 +200,13 @@ def test_bundled_h4_ele_matches_generators(h4, bundled_h4, label):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS, (STALE_CG_BLOCKS, STALE)))
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS, (KNOWN_NOT_INVARIANT, KNOWN)))
 def test_bundled_cg_blocks_transform_as_their_irrep(h4, irreps):
     """Each bundled CG block spans an invariant subspace that transforms as its irrep."""
     _assert_blocks_transform_as_their_irrep(h4, irreps, cg_calc(*irreps, verbose=False).cg_dict)
 
 
-@pytest.mark.parametrize(
-    "irreps", _params(BUNDLED_PRODUCTS, (STALE_CG_RANK, STALE), (KNOWN_INCOMPLETE, KNOWN))
-)
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS, (KNOWN_INCOMPLETE, KNOWN)))
 def test_bundled_cg_blocks_are_independent(irreps):
     """Together the bundled CG blocks span the whole tensor-product space."""
     _assert_blocks_are_independent(irreps, cg_calc(*irreps, verbose=False).cg_dict)
