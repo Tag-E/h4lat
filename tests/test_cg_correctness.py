@@ -214,8 +214,32 @@ def test_bundled_cg_blocks_match_their_raw_blocks(irreps):
     """The bundled final blocks are CGmat_from_block of the bundled raw blocks (not stale)."""
     cg = cg_calc(*irreps, verbose=False)
     for (irep, m), raw in cg.raw_cg.items():
-        expected = cc.CGmat_from_block(raw, cg.mul_list[irep], m)
+        expected = cc.CGmat_from_block(raw, cg.mul_list[irep], m, irreps=irreps)
         assert np.allclose(cg.cg_dict[irep][m], expected), f"block {irep}_{m} {rep_label_list[irep]}"
+
+
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
+def test_bundled_cg_blocks_have_definite_c_parity(h4, irreps):
+    """Each copy is even or odd under reversal of the derivative indices (definite C-parity).
+
+    The even copies come first, and the numbers m± of even and odd copies of each irrep are
+    the ones the characters give: m₊ - m₋ = (1/|G|) Σ_g χ(g) tr(R T(g)).
+    """
+    perm = cc._c_parity_permutation(irreps)
+    if perm is None:  # one derivative: the reversal is the identity
+        perm = np.arange(int(np.prod([label[0] for label in irreps])))
+    T = _product_matrices(h4, irreps)
+    trace_RT = T[:, perm, np.arange(len(perm))].sum(axis=1)  # (R T(g))[r, c] = T(g)[perm[r], c]
+    for irep, blocks in cg_calc(*irreps, verbose=False).cg_dict.items():
+        signs = []
+        for m, C in enumerate(blocks):
+            even = np.allclose(C[perm], C, rtol=0, atol=1e-12)
+            odd = np.allclose(C[perm], -C, rtol=0, atol=1e-12)
+            assert even or odd, f"block {irep}_{m} {rep_label_list[irep]} has no definite C-parity"
+            signs.append(1 if even else -1)
+        assert signs == sorted(signs, reverse=True), f"{rep_label_list[irep]}: the even copies do not come first"
+        chi = np.trace(h4[irep], axis1=1, axis2=2)
+        assert np.isclose(sum(signs), np.sum(chi * trace_RT) / len(chi)), f"{rep_label_list[irep]}: wrong m±"
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +261,7 @@ def test_cgmat_from_block_with_opposite_entries():
     """Multiplicity 1 with entries ℓ and -ℓ (different sympy expressions, one degree of freedom)."""
     ell = [2.0, -1.0, 0.5]
     block = _symbolic_block([[ell, ell], [[0, 0, 0], ell], [[-x for x in ell], [0, 0, 0]]])
-    C = cc.CGmat_from_block(block, multiplicity=1, multiplicity_index=0)
+    C = cc.CGmat_from_block(block, multiplicity=1, multiplicity_index=0, enforce_c_parity=False)
     assert np.allclose(C, [[1, 1], [0, 1], [-1, 0]])
 
 
@@ -245,7 +269,9 @@ def test_cgmat_from_block_gives_independent_copies():
     """With multiplicity 2 the copies are independent, even if the entries share symbols."""
     a, b = [1.0, 1.0, 0.0], [0.0, 1.0, 1.0]  # independent linear forms with the symbol A[0, 1] in common
     block = _symbolic_block([[a], [b], [[x + y for x, y in zip(a, b)]]])
-    copies = [cc.CGmat_from_block(block, multiplicity=2, multiplicity_index=m) for m in range(2)]
+    copies = [
+        cc.CGmat_from_block(block, multiplicity=2, multiplicity_index=m, enforce_c_parity=False) for m in range(2)
+    ]
     assert np.allclose(copies[0], [[1], [0], [1]])
     assert np.allclose(copies[1], [[0], [1], [1]])
 
@@ -254,7 +280,24 @@ def test_cgmat_from_block_rejects_a_wrong_multiplicity():
     """A block with one degree of freedom is not two copies."""
     block = _symbolic_block([[[1.0, 2.0]], [[2.0, 4.0]]])
     with pytest.raises(ValueError, match="multiplicity 2"):
-        cc.CGmat_from_block(block, multiplicity=2, multiplicity_index=0)
+        cc.CGmat_from_block(block, multiplicity=2, multiplicity_index=0, enforce_c_parity=False)
+
+
+def test_cgmat_from_block_needs_irreps_for_c_parity():
+    """enforce_c_parity (the default) needs the factors of the product, to know what to reverse."""
+    block = _symbolic_block([[[1.0, 2.0]], [[2.0, 4.0]]])
+    with pytest.raises(ValueError, match="pass irreps"):
+        cc.CGmat_from_block(block, multiplicity=1, multiplicity_index=0)
+
+
+def test_cgmat_from_block_gives_exact_c_parity():
+    """With enforce_c_parity every copy is exactly even or odd, to the last bit (C_parity compares with ==)."""
+    irreps = ((4, 4), (4, 1), (4, 1))
+    perm = cc._c_parity_permutation(irreps)
+    cg = cg_calc(*irreps, verbose=False)
+    for (irep, m), raw in cg.raw_cg.items():
+        C = cc.CGmat_from_block(raw, cg.mul_list[irep], m, irreps=irreps)
+        assert np.array_equal(C[perm], C) or np.array_equal(C[perm], -C), f"block {irep}_{m}"
 
 
 @pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))

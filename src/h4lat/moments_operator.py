@@ -1274,13 +1274,13 @@ def get_op_selection(n_der: int) -> list[Operator]:
         opT2 =      Operator_from_database(200) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
         opT3 = -2 * Operator_from_database(201) # = 2x 1,2,{1,2} + 1,3,{1,3} -3x 1,4,{1,4} - 2,3,{2,3} +3 2,4,{2,4}
 
-        # Tensor - irrep (6,2) (the block with C=-1)
-        opT4 =     Operator_from_database(233) + Operator_from_database(239)   # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
-        opT5 =     Operator_from_database(234) + Operator_from_database(240)   # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
-        opT6 = - ( Operator_from_database(235) + Operator_from_database(241) ) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
-        opT7 =     Operator_from_database(236) + Operator_from_database(242)   # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
-        opT8 = - ( Operator_from_database(237) + Operator_from_database(243) ) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
-        opT9 = - ( Operator_from_database(238) + Operator_from_database(244) ) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
+        # Tensor - irrep (6,2), block 1 (C=-1)
+        opT4 =   Operator_from_database(233) # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
+        opT5 =   Operator_from_database(234) # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
+        opT6 = - Operator_from_database(235) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
+        opT7 =   Operator_from_database(236) # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
+        opT8 = - Operator_from_database(237) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
+        opT9 = - Operator_from_database(238) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
 
         # Set custom labels
         opV1.id = "V1"; opV2.id = "V2"; opV3.id = "V3"; opV4.id = "V4"

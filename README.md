@@ -65,6 +65,16 @@ This library provides:
 * An **Operator** class that assembles lattice operators from CG matrices,
   computes their kinematic factors, C-parity, index symmetry, and provides LaTeX output.
 
+**C-parity of the CG copies.**  When an irrep appears more than once in a tensor product
+whose factors after the first are all the same irrep (the derivative indices of an
+operator), its copies are chosen with a definite C-parity: each copy is symmetric or
+antisymmetric under reversal of the derivative indices, the symmetric ones first.  This is
+always possible.  Charge conjugation reverses the derivative indices, which commutes with
+H(4), so it maps the copies of an irrep into each other; since it squares to one, they split
+into even and odd ones.  Every operator in the bundled database therefore has C = ±1.
+(Until October 2026 the copies were chosen without this condition, so some operators had
+mixed C-parity, and the operator IDs of irreps with multiplicity > 1 referred to other copies.)
+
 ---
 
 ## Installation

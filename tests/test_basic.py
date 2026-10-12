@@ -13,6 +13,7 @@ from h4lat import (
     get_OperatorDict,
     get_OperatorList,
     get_multiplicities,
+    get_op_selection,
     irrep_dim,
     irrep_index,
     latex_print_multiplicities,
@@ -260,6 +261,21 @@ def test_get_OperatorList_operator_attributes():
         assert isinstance(op.index_block, int) and op.index_block >= 1
         # n is at least 2 (one Dirac index plus at least one derivative index).
         assert op.n >= 2
+
+
+def test_bundled_operators_have_definite_c_parity():
+    """Copies of an irrep are chosen with definite C-parity, so no bundled operator is 'mixed'."""
+    mixed = [op.id for op in get_OperatorList() if op.C not in (1, -1)]
+    assert mixed == [], f"operators without definite C-parity: {mixed}"
+
+
+def test_op_selection_has_definite_c_parity():
+    """Every selected operator has a definite irrep and C-parity; the (6,2) tensors are block 1, C = -1."""
+    for n_der in (1, 2, 3):
+        for op in get_op_selection(n_der):
+            assert op.irrep is not None and op.C in (1, -1), f"n_der={n_der}, operator {op.id}"
+    for op in get_op_selection(2)[11:]:
+        assert (op.irrep, op.block, op.C) == ((6, 2), 1, -1), f"operator {op.id}"
 
 
 def test_get_OperatorList_in_public_api():

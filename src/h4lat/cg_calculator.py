@@ -32,7 +32,8 @@ CG coefficients are computed via the projection formula of Sakata (1974)
 target irrep matrices over all group elements extracts the CG vectors
 symbolically.  The resulting free parameters (freedom within degenerate
 subspaces) are fixed by CGmat_from_block, which picks one independent copy
-of the irrep for each unit of multiplicity.
+of the irrep for each unit of multiplicity, each with a definite C-parity
+(symmetric or antisymmetric under reversal of the derivative indices).
 
 Main entry point: cg_calc.
 Module-level helpers: get_multiplicities, latex_print_multiplicities.
@@ -726,7 +727,9 @@ class cg_calc:
                     if irep not in self.cg_dict.keys():
                         self.cg_dict[irep] = []
                     self.raw_cg[(irep, m)] = rounded_res[:, d : d + rep_dim_list[irep]]
-                    self.cg_dict[irep].append(CGmat_from_block(self.raw_cg[(irep, m)], mul, m))
+                    self.cg_dict[irep].append(
+                        CGmat_from_block(self.raw_cg[(irep, m)], mul, m, irreps=self.chosen_irreps)
+                    )
                     d += rep_dim_list[irep]
 
             time_end_evaluation = time.time()
@@ -784,7 +787,12 @@ class cg_calc:
                         with open(f'{out_folder}_raw/{irep}_{m}.npy', 'wb') as f:
                             np.save(f, self.raw_cg[(irep, m)])
                     with open(f'{out_folder}/{irep}_{m}.npy', 'wb') as f:
-                        np.save(f, CGmat_from_block(self.raw_cg[(irep, m)], self.mul_list[irep], m))
+                        np.save(
+                            f,
+                            CGmat_from_block(
+                                self.raw_cg[(irep, m)], self.mul_list[irep], m, irreps=self.chosen_irreps
+                            ),
+                        )
 
             if prescription_changed:
                 self.cg_folder = out_folder
@@ -909,12 +917,32 @@ def latex_print_multiplicities(
     return out_str if return_str else None
 
 
+def _c_parity_permutation(irreps: tuple[tuple[int, int], ...]) -> np.ndarray | None:
+    """Row permutation of a CG block that reverses the order of the factors after the first.
+
+    For an operator ψ̄ Γ D_{μ₂} … D_{μₙ} ψ, with Γ transforming as irreps[0] and each
+    derivative as one of irreps[1:], charge conjugation reverses the derivative indices
+    (see C_parity in moments_operator): on the rows of a CG block this is the returned
+    permutation, up to an overall sign.  Returns None when there is nothing to reverse
+    (fewer than two factors after the first) or when the factors after the first are
+    not all the same irrep (then the reversal is not a symmetry of the product).
+    """
+    irreps = tuple(tuple(irrep) for irrep in irreps)
+    if len(irreps) < 3 or len(set(irreps[1:])) != 1:
+        return None
+    dims = [irrep_dim[irrep] for irrep in irreps]
+    rows = np.arange(int(np.prod(dims))).reshape(dims)
+    return np.transpose(rows, [0] + list(range(len(dims) - 1, 0, -1))).ravel()
+
+
 def CGmat_from_block(
     block: np.ndarray,
     multiplicity: int,
     multiplicity_index: int,
     normalize: bool = True,
     threshold: float = 1e-10,
+    enforce_c_parity: bool = True,
+    irreps: tuple[tuple[int, int], ...] | None = None,
 ) -> np.ndarray:
     """
     Extract one numerical copy of an irrep from a symbolic CG block.
@@ -933,6 +961,15 @@ def CGmat_from_block(
         Divide each column by the absolute value of its first non-zero entry.
     threshold : float
         Entries smaller than this are set to zero (floating-point noise).
+    enforce_c_parity : bool
+        Choose copies with a definite C-parity, i.e. symmetric or antisymmetric under
+        reversal of the factors after the first (the derivative indices of an
+        operator); the symmetric copies come first.  Requires *irreps*.  Has no
+        effect when there are fewer than two factors after the first, or when they
+        are not all the same irrep.
+    irreps : tuple of tuple[int, int], optional
+        Factors of the tensor product, e.g. ((6, 1), (4, 1), (4, 1)).  Required
+        when *enforce_c_parity* is True.
 
     Returns
     -------
@@ -944,7 +981,9 @@ def CGmat_from_block(
     ------
     ValueError
         If the free parameters of the block do not have *multiplicity* degrees of
-        freedom, i.e. the block is not a projection onto *multiplicity* copies.
+        freedom, i.e. the block is not a projection onto *multiplicity* copies; or
+        if *enforce_c_parity* is True and *irreps* is missing or does not match
+        the block.
 
     Notes
     -----
@@ -964,6 +1003,16 @@ def CGmat_from_block(
 
     With multiplicity 1 there is a single copy, the same for any A up to a factor;
     the factor is fixed by the first non-zero entry of column 0 being +1.
+
+    With *enforce_c_parity*, every copy also has a definite C-parity.  Charge
+    conjugation reverses the derivative indices, which on the rows of the block is a
+    permutation R (up to a sign that does not depend on the copy).  R commutes with
+    the action of the group, since it only permutes identical factors, so R·P(A) is
+    again a CG block: R maps the space of copies into itself.  As R² = 1, that space
+    splits into the copies even and odd under R, which are those of the blocks
+    (1 + R)/2 · P(A) and (1 − R)/2 · P(A).  The copies are chosen as above within each
+    of the two blocks, the even ones first.  A copy of multiplicity 1 is already even
+    or odd, so it is the same as without the projection.
     """
 
     # a 1-D block is a single column
@@ -999,21 +1048,48 @@ def CGmat_from_block(
             f"column 0 of the block has {rank} independent entries, expected the multiplicity {multiplicity}"
         )
 
+    # C-parity: split L into the parts even and odd under the reversal R of the derivative
+    # indices, (1 ± R)/2 · L; the copies of each part are exactly the even / odd ones
+    perm = None
+    if enforce_c_parity:
+        if irreps is None:
+            raise ValueError("enforce_c_parity needs the factors of the tensor product: pass irreps")
+        perm = _c_parity_permutation(irreps)
+        if perm is not None and len(perm) != nrows:
+            raise ValueError(f"the block has {nrows} rows, but the product {irreps} has dimension {len(perm)}")
+    parts = [(L, 1)] if perm is None else [((L + L[perm]) / 2, 1), ((L - L[perm]) / 2, -1)]
+    part_ranks = [np.linalg.matrix_rank(part[:, 0, :], tol=tol) if len(symbols) else 0 for part, _ in parts]
+    if sum(part_ranks) != multiplicity:
+        raise ValueError(
+            f"the even and odd parts of the block have {part_ranks} copies, expected the multiplicity {multiplicity}"
+        )
+
+    # the part that holds copy `multiplicity_index` (even copies first), and the copy's index in it
+    ipart, index = 0, multiplicity_index
+    while index >= part_ranks[ipart]:
+        index -= part_ranks[ipart]
+        ipart += 1
+    (L_part, sign), n_copies = parts[ipart], part_ranks[ipart]
+    L0_part = L_part[:, 0, :]
+
     # reference rows: the first rows of column 0 (in row order) with independent linear forms
     ref_rows = []
     for r in range(nrows):
-        if np.linalg.matrix_rank(L0[ref_rows + [r]], tol=tol) > len(ref_rows):
+        if np.linalg.matrix_rank(L0_part[ref_rows + [r]], tol=tol) > len(ref_rows):
             ref_rows.append(r)
-            if len(ref_rows) == multiplicity:
+            if len(ref_rows) == n_copies:
                 break
 
-    # the A of minimal norm with reference row i of column 0 equal to δ_{i, multiplicity_index}
-    target = np.zeros(multiplicity)
-    target[multiplicity_index] = 1.0
-    a = np.linalg.pinv(L0[ref_rows]) @ target
+    # the A of minimal norm with reference row i of column 0 equal to δ_{i, index}
+    target = np.zeros(n_copies)
+    target[index] = 1.0
+    a = np.linalg.pinv(L0_part[ref_rows]) @ target
 
     # the copy: the block evaluated at that A
-    newmat = L @ a
+    newmat = L_part @ a
+    if perm is not None:
+        # exactly even / odd, also in the last bit (rounding in L_part @ a can break it)
+        newmat = (newmat + sign * newmat[perm]) / 2
     newmat[np.abs(newmat) < threshold] = 0.0
 
     # each column scaled so that its first non-zero entry is ±1
