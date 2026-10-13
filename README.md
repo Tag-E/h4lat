@@ -15,6 +15,7 @@
   - [Computing new CG coefficients](#computing-new-cg-coefficients)
   - [Constructing lattice operators](#constructing-lattice-operators)
   - [Loading operators from the bundled database](#loading-operators-from-the-bundled-database)
+  - [Operator catalogue (PDF)](#operator-catalogue-pdf)
   - [Operators free of mixing](#operators-free-of-mixing)
   - [Building an operator database](#building-an-operator-database)
   - [Saving and reloading operators (HDF5)](#saving-and-reloading-operators-hdf5)
@@ -156,7 +157,8 @@ New results are written to `./cg_database` in the working directory (H(4) matric
 regenerated with `force_h4gen=True` go to `./h4_ele`), never into the installed package.
 Later calls read the bundled data first, then `./cg_database`.  To update the bundled
 data, copy these folders into `src/h4lat/data/`, or regenerate them with
-`python scripts/regenerate_data.py` (see `--help`).  Pass `cgdatabase="/path/to/custom/db"`
+`python scripts/regenerate_data.py` (see `--help`), then refresh the PDF catalogue with
+[`h4lat-catalogue`](#operator-catalogue-pdf).  Pass `cgdatabase="/path/to/custom/db"`
 to read and write a custom database instead.
 
 ### Constructing lattice operators
@@ -235,6 +237,26 @@ Both functions are thin wrappers that call the more general
 so they always read from `OPERATOR_DATABASE` (the bundled path).  Pass an
 explicit path to the underlying functions if you have generated a custom
 database with `make_operator_database`.
+
+### Operator catalogue (PDF)
+
+To browse the database, write a PDF catalogue of all its operators.  For each operator
+it lists the expression, the kinematic factor, the C-parity, the trace condition and the
+index symmetry, grouped by Dirac structure, number of indices and H(4) irrep:
+
+```bash
+h4lat-catalogue                           # writes ./operator_catalogue.pdf
+h4lat-catalogue -o docs/ops.pdf --open    # custom path, open the PDF when done
+h4lat-catalogue --database my_operators   # catalogue of a custom operator database
+```
+
+The command is installed with the package.  It needs `pylatex` (`pip install "h4lat[full]"`)
+and a LaTeX installation that provides `latexmk` or `pdflatex` (e.g. TeX Live).  See
+`h4lat-catalogue --help` for all options.  From Python, call `operator_show(show=False)`.
+If you have no LaTeX installation, the
+[`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) notebook shows the same
+content.  With a development install, run `pip install -e .` again after pulling this
+change so that the command is registered.
 
 ### Operators free of mixing
 

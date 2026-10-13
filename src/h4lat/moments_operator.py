@@ -1585,6 +1585,9 @@ def operator_show(
     H(4) irrep / multiplicity block and lists every operator with its
     symbolic expression and kinematic factor.
 
+    The command ``h4lat-catalogue`` (installed with the package) calls this
+    function from the shell; see ``h4lat-catalogue --help``.
+
     Parameters
     ----------
     operator_database : str, optional
@@ -1597,8 +1600,8 @@ def operator_show(
     author : str, optional
         Author string printed on the title page (default ``"E.T."``).
     doc_name : str, optional
-        Base name (without extension) for the generated ``.tex`` / ``.pdf``
-        files.  Defaults to ``"operator_catalogue"``.
+        Path (without extension) of the generated ``.tex`` / ``.pdf``
+        files; its folder must exist.  Defaults to ``"operator_catalogue"``.
     verbose : bool, optional
         Print progress messages to stdout (default ``False``).
     show : bool, optional

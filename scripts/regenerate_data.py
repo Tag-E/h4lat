@@ -369,6 +369,8 @@ def main(argv=None):
 
     log.info("done in %s", duration(time.time() - start))
     log.info("next: python -m pytest tests/test_cg_correctness.py, the full suite, then commit %s", data)
+    if "operators" in args.stages or "all" in args.stages:
+        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue")
     return 0
 
 

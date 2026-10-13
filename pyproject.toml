@@ -54,6 +54,9 @@ dev = [
     "h4lat[full]",
 ]
 
+[project.scripts]
+h4lat-catalogue = "h4lat.cli:catalogue_main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

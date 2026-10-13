@@ -1,6 +1,7 @@
 """Basic tests for the h4lat package."""
 
 import numpy as np
+import pytest
 
 import h4lat
 from h4lat import (
@@ -22,6 +23,7 @@ from h4lat import (
     rep_dim_list,
     rep_label_list,
 )
+from h4lat.cli import catalogue_main
 
 # ---------------------------------------------------------------------------
 # Group constants
@@ -200,6 +202,53 @@ def test_package_version():
 
 def test_public_api_present():
     assert all(hasattr(h4lat, name) for name in h4lat.__all__)
+
+
+# ---------------------------------------------------------------------------
+# h4lat-catalogue — command-line wrapper of operator_show
+# ---------------------------------------------------------------------------
+
+
+def _run_catalogue(monkeypatch, argv):
+    """Run h4lat-catalogue with operator_show replaced by a recorder; return its kwargs."""
+    pytest.importorskip("pylatex")
+    import h4lat.moments_operator
+
+    calls = []
+    monkeypatch.setattr(h4lat.moments_operator, "operator_show", lambda **kwargs: calls.append(kwargs))
+    assert catalogue_main(argv) == 0
+    assert len(calls) == 1
+    return calls[0]
+
+
+def test_operator_show_in_public_api():
+    assert "operator_show" in h4lat.__all__
+
+
+def test_catalogue_defaults(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    kwargs = _run_catalogue(monkeypatch, [])
+    assert kwargs["doc_name"] == str(tmp_path / "operator_catalogue")
+    assert kwargs["operator_database"] is None
+    assert kwargs["show"] is False
+    assert kwargs["clean_tex"] is True
+
+
+def test_catalogue_options(monkeypatch, tmp_path):
+    output = tmp_path / "sub" / "dir" / "ops.pdf"
+    kwargs = _run_catalogue(
+        monkeypatch, ["-o", str(output), "--database", OPERATOR_DATABASE, "--open", "--keep-tex", "-q"]
+    )
+    assert kwargs["doc_name"] == str(output.with_suffix(""))
+    assert output.parent.is_dir()
+    assert kwargs["operator_database"] == OPERATOR_DATABASE
+    assert kwargs["show"] is True
+    assert kwargs["clean_tex"] is False
+
+
+def test_catalogue_missing_database(tmp_path):
+    with pytest.raises(SystemExit):
+        catalogue_main(["--database", str(tmp_path / "missing")])
 
 
 # ---------------------------------------------------------------------------

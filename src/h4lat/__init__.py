@@ -60,6 +60,7 @@ from .moments_operator import (
     latexO_from_diracO,
     make_operator_database,
     operator_list_to_h5,
+    operator_show,
     read_operator,
     symO_from_Cgmat,
     trace_symm,
@@ -94,6 +95,7 @@ __all__ = [
     "OperatorList_from_database",
     "OperatorDict_from_database",
     "Operator_from_database",
+    "operator_show",
     # Convenience getters for the bundled operator database
     "get_OperatorList",
     "get_OperatorDict",
