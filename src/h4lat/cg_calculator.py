@@ -42,7 +42,6 @@ Module-level helpers: get_multiplicities, latex_print_multiplicities.
 
 ######################## Library Imports ################################
 
-import itertools as it
 import sys
 import time
 from importlib.resources import files as _resource_files

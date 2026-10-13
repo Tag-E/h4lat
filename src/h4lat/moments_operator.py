@@ -26,7 +26,7 @@ An ``Operator`` object represents a single irreducible lattice operator of the f
     O^X_{μ₁ μ₂ … μₙ}  =  Σ_{i₁,…,iₙ} c_{i₁…iₙ}  Γ^X_{i₁}  D_{i₂} … D_{iₙ}
 
 where Γ^X is the Dirac structure (V: γ_μ, A: γ_μ γ₅, T: σ_{μν}, S: 𝟙, P: γ₅), the c_{i₁…iₙ}
-are Clebsch-Gordan coefficients stored in ``cgmat``, and the derivatives D are 
+are Clebsch-Gordan coefficients stored in ``cgmat``, and the derivatives D are
 left minus right acting covariant derivatives.
 
 The kinematic factor K(p, m) is the ratio of the tree-level three-point correlator
@@ -98,12 +98,9 @@ from .cg_calculator import (
 )
 from .kinematic_data import (
     E,
-    Gamma_pol,
     Gamma_pol_list,
-    Gamma_pol_s_list,
     I,
     Id_4,
-    den_K,
     den_K_list,
     gamma5,
     gamma_mu,
@@ -1283,10 +1280,22 @@ def get_op_selection(n_der: int) -> list[Operator]:
         opT9 = - Operator_from_database(238) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
 
         # Set custom labels
-        opV1.id = "V1"; opV2.id = "V2"; opV3.id = "V3"; opV4.id = "V4"
-        opA1.id = "A1"; opA2.id = "A2"; opA3.id = "A3"; opA4.id = "A4"
-        opT1.id = "T1"; opT2.id = "T2"; opT3.id = "T3"; opT4.id = "T4"
-        opT5.id = "T5"; opT6.id = "T6"; opT7.id = "T7"; opT8.id = "T8"
+        opV1.id = "V1"
+        opV2.id = "V2"
+        opV3.id = "V3"
+        opV4.id = "V4"
+        opA1.id = "A1"
+        opA2.id = "A2"
+        opA3.id = "A3"
+        opA4.id = "A4"
+        opT1.id = "T1"
+        opT2.id = "T2"
+        opT3.id = "T3"
+        opT4.id = "T4"
+        opT5.id = "T5"
+        opT6.id = "T6"
+        opT7.id = "T7"
+        opT8.id = "T8"
         opT9.id = "T9"
 
         return [opV1, opV2, opV3, opV4, opA1, opA2, opA3, opA4,
