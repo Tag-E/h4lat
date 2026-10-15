@@ -22,7 +22,12 @@ BUNDLED_PRODUCTS = [
     ((4, 1), (4, 1), (4, 1)),
     ((4, 4), (4, 1), (4, 1)),
     ((6, 1), (4, 1), (4, 1)),
+    ((4, 1), (4, 1), (4, 1), (4, 1)),
+    ((4, 4), (4, 1), (4, 1), (4, 1)),
+    ((6, 1), (4, 1), (4, 1), (4, 1)),
 ]
+# raw blocks are bundled only for products of up to three irreps (see scripts/regenerate_data.py)
+BUNDLED_RAW_PRODUCTS = [p for p in BUNDLED_PRODUCTS if len(p) <= 3]
 
 TINY = ((2, 1), (2, 1))  # 4-dimensional product, computed in a few seconds
 
@@ -211,7 +216,7 @@ def test_bundled_cg_blocks_are_independent(irreps):
     _assert_blocks_are_independent(irreps, cg_calc(*irreps, verbose=False).cg_dict)
 
 
-@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
+@pytest.mark.parametrize("irreps", _params(BUNDLED_RAW_PRODUCTS))
 def test_bundled_cg_blocks_match_their_raw_blocks(irreps):
     """The bundled final blocks are CGmat_from_block of the bundled raw blocks (not stale)."""
     cg = cg_calc(*irreps, verbose=False)
@@ -465,7 +470,7 @@ def test_n_threads_validation(kwargs, match, tmp_path):
         cg_calc(*TINY, cgdatabase=str(tmp_path), force_computation=True, verbose=False, **kwargs)
 
 
-@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
+@pytest.mark.parametrize("irreps", _params(BUNDLED_RAW_PRODUCTS))  # the others take a minute each
 def test_recomputed_products_match_the_bundled_data(irreps, tmp_path):
     """Recomputing a bundled product reproduces the bundled CG matrices (up to floating-point noise).
 
@@ -544,3 +549,24 @@ def test_missing_bundled_h4_ele_is_generated_into_the_working_directory(tmp_path
     assert cg.h4_ele_folder == "h4_ele"
     assert len(list((tmp_path / "h4_ele").iterdir())) == len(rep_label_list)
     assert not missing.exists()
+
+
+def test_raw_blocks_are_loaded_on_access():
+    """Loading a product reads only its final blocks; the raw blocks are read when raw_cg is accessed."""
+    cg = cg_calc((4, 1), (4, 1), verbose=False)
+    assert cg._raw_cg is None
+    assert sorted(cg.raw_cg) == sorted((irep, m) for irep, blocks in cg.cg_dict.items() for m in range(len(blocks)))
+
+
+def test_products_of_four_irreps_are_bundled_without_raw_blocks(tmp_path, monkeypatch):
+    """A bundled 4-irrep product loads from its final blocks; asking for its raw blocks is a clear error."""
+    monkeypatch.chdir(tmp_path)  # prescription_changed would write to ./cg_database
+    irreps = ((4, 1), (4, 1), (4, 1), (4, 1))
+    cg = cg_calc(*irreps, verbose=False)
+    assert Path(cg.cg_folder).resolve() == (Path(cc._BUNDLED_CG_DATABASE) / "(4, 1)(4, 1)(4, 1)(4, 1)").resolve()
+    _assert_blocks_are_independent(irreps, cg.cg_dict)
+    with pytest.raises(FileNotFoundError, match="force_computation=True"):
+        _ = cg.raw_cg
+    with pytest.raises(FileNotFoundError, match="force_computation=True"):
+        cg_calc(*irreps, prescription_changed=True, verbose=False)
+    assert list(tmp_path.iterdir()) == []  # nothing was written

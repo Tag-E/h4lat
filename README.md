@@ -59,7 +59,8 @@ onto specific moments of parton distributions via the OPE.
 This library provides:
 
 * A pre-computed **CG database** (`.npy` files, bundled with the package) for all
-  tensor products encountered in standard moments of PDFs calculations.
+  tensor products encountered in standard moments of PDFs calculations, with up to
+  three derivatives.
 * A **calculator** (`cg_calc`) that loads from the database or computes new CG
   coefficients on demand using the projection formula of
   [Sakata (1974)](https://doi.org/10.1063/1.1666528).
@@ -147,6 +148,13 @@ for irep_idx, matrices in cg.cg_dict.items():
           f"shape {matrices[0].shape}")
 ```
 
+The bundled database holds the products of X = (4,1), (4,4) or (6,1) (vector, axial,
+tensor) with one, two or three (4,1) factors (the derivatives).  The raw symbolic blocks
+from which the CG matrices are derived (`cg.raw_cg`, read on first access, needed by
+`prescription_changed=True`) are bundled only for products of up to three irreps: for
+the products of four irreps they would take tens of MB, so recompute them with
+`force_computation=True` (about a minute) if you need them.
+
 ### Computing new CG coefficients
 
 ```python
@@ -206,8 +214,12 @@ print("symm =", op.symm)   # Index symmetry
 
 ### Loading operators from the bundled database
 
-The package ships with a pre-built operator database.  The two convenience
-getters below load it without any path configuration:
+The package ships with a pre-built operator database of 1176 operators, with up to three
+derivatives: V and A with up to 4 indices, T with up to 5 (IDs 1–1176, ordered as V2, A2,
+T3, V3, A3, T4, V4, A4, T5).  The two convenience getters below load it without any path
+configuration.  The symbolic expression `op.O`, the kinematic factor `op.K` and their
+LaTeX forms are computed when first accessed, so loading the whole database takes about
+a second:
 
 ```python
 from h4lat import get_OperatorList, get_OperatorDict
@@ -305,7 +317,7 @@ from h4lat import make_operator_database
 
 make_operator_database(
     operator_folder="my_operators",
-    max_n=3,        # V and A up to 3 indices; T up to 4 indices
+    max_n=4,        # V and A up to 4 indices; T up to 5 indices (as the bundled database)
     verbose=True,
 )
 ```

@@ -11,10 +11,10 @@ from h4lat import (
     cg_calc,
     char_table,
     class_orders,
-    get_OperatorDict,
-    get_OperatorList,
     get_multiplicities,
     get_op_selection,
+    get_OperatorDict,
+    get_OperatorList,
     irrep_dim,
     irrep_index,
     latex_print_multiplicities,
@@ -380,3 +380,47 @@ def test_get_OperatorDict_contains_vector_operators():
 def test_get_OperatorDict_in_public_api():
     """get_OperatorDict must appear in h4lat.__all__."""
     assert "get_OperatorDict" in h4lat.__all__
+
+
+# ---------------------------------------------------------------------------
+# Bundled operator database: content
+# ---------------------------------------------------------------------------
+
+
+def test_bundled_operator_database_covers_three_derivatives():
+    """V, A and T operators with up to three derivatives, one per basis vector of each product, IDs 1-1176."""
+    d = get_OperatorDict()
+    counts = {key: sum(len(ops) for ops in group.values()) for key, group in d.items()}
+    assert counts == {
+        (2, 'V'): 16,
+        (2, 'A'): 16,
+        (3, 'T'): 24,
+        (3, 'V'): 64,
+        (3, 'A'): 64,
+        (4, 'T'): 96,
+        (4, 'V'): 256,
+        (4, 'A'): 256,
+        (5, 'T'): 384,
+    }
+    ids = sorted(op.id for group in d.values() for ops in group.values() for op in ops)
+    assert ids == list(range(1, 1177))
+
+
+def test_operator_symbolic_attributes_are_computed_on_access():
+    """O, K and their LaTeX forms are computed on first access; set_polarization_matrix resets K."""
+    from h4lat.moments_operator import Kfactor_from_diracO, Operator_from_database, diracO_from_cgmat
+
+    op = Operator_from_database(1)
+    assert not {"O", "K", "latex_O", "latex_K", "p3corr_is_real"} & set(op.__dict__)
+    assert op.K == Kfactor_from_diracO(diracO_from_cgmat(op.cgmat, op.X), 0)
+    latex_K = op.latex_K
+    assert {"K", "latex_K"} <= set(op.__dict__)
+
+    op.set_polarization_matrix(2)
+    assert not {"K", "latex_K", "p3corr_is_real"} & set(op.__dict__)
+    assert op.K == Kfactor_from_diracO(diracO_from_cgmat(op.cgmat, op.X), 2)
+    op.set_polarization_matrix(0)
+    assert op.latex_K == latex_K
+
+    with pytest.raises(ValueError, match="gamma_pol_index"):
+        type(op)(cgmat=op.cgmat, id=1, X=op.X, irrep=op.irrep, block=1, index_block=1, gamma_pol_index=6)

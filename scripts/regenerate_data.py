@@ -14,7 +14,9 @@ the result with `git status src/h4lat/data` and throw it away with
 generators in the code (force_h4gen), never from stale bundled matrices.  With
 --from-raw, the cg stage instead only re-applies CGmat_from_block to the bundled raw
 blocks (`{product}_raw/`), which takes seconds: use it when CGmat_from_block changed
-but the generators did not.
+but the generators did not.  Raw blocks are bundled only for products of up to
+MAX_RAW_IRREPS irreps: those of larger products take tens of MB and long to load, and
+computing such a product takes about a minute, so --from-raw recomputes them instead.
 
 Examples (from the repository root, with h4lat installed with `pip install -e .`):
 
@@ -22,7 +24,8 @@ Examples (from the repository root, with h4lat installed with `pip install -e .`
   python scripts/regenerate_data.py h4
   python scripts/regenerate_data.py cg --products "(6,1),(4,1)" "(4,1),(4,1)"
   python scripts/regenerate_data.py cg --from-raw
-  python scripts/regenerate_data.py operators
+  python scripts/regenerate_data.py cg --products "(6,1),(4,1),(4,1),(4,1)"
+  python scripts/regenerate_data.py operators            # up to --max-n 4 indices (V, A; T: 5)
 
 Then run `python -m pytest tests/test_cg_correctness.py` (and the full suite) and
 commit src/h4lat/data.
@@ -47,6 +50,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 STAGES = ("h4", "cg", "operators")
 NOISE = 1e-10  # smaller differences between old and new data are floating-point noise, not changes
+MAX_RAW_IRREPS = 3  # raw CG blocks are bundled only for products of up to this many irreps
 
 log = logging.getLogger("regenerate_data")
 
@@ -205,14 +209,15 @@ def compute_product(product, cg_database, scratch, verbose, raw_source=None):
 def regenerate_cg(data, workdir, products, jobs, from_raw=False):
     """Recompute the CGs of *products*, installing each one as soon as it is done.
 
-    With *from_raw*, only the final blocks are rebuilt, from the bundled raw blocks.
+    With *from_raw*, only the final blocks are rebuilt, from the bundled raw blocks; the
+    products without bundled raw blocks (more than MAX_RAW_IRREPS irreps) are recomputed.
     Returns the products that failed.
     """
     raw_source = data / "cg_database" if from_raw else None
     if from_raw:
         missing = [p for p in products if not (raw_source / (product_name(p) + "_raw")).is_dir()]
         if missing:
-            raise SystemExit(f"cg: no bundled raw blocks for {', '.join(product_name(p) for p in missing)}")
+            log.info("cg: no bundled raw blocks for %s: recomputed", ", ".join(product_name(p) for p in missing))
     cg_database = workdir / "cg_database"
     if jobs > 1:
         os.environ["TQDM_DISABLE"] = "1"  # no interleaved progress bars: tqdm reads it when a worker imports it
@@ -225,7 +230,8 @@ def regenerate_cg(data, workdir, products, jobs, from_raw=False):
         for p in todo:
             # with one job, cg_calc output and progress bar are shown (otherwise they would interleave)
             scratch = workdir / "scratch" / product_name(p)
-            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1, raw_source)] = p
+            source = raw_source if from_raw and (raw_source / (product_name(p) + "_raw")).is_dir() else None
+            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1, source)] = p
             log.info("cg: queued %s", product_name(p))
         for future in as_completed(futures):
             p = futures[future]
@@ -236,7 +242,8 @@ def regenerate_cg(data, workdir, products, jobs, from_raw=False):
                 failed.append(p)
                 continue
             log.info("cg: %s computed in %s", product_name(p), duration(elapsed))
-            for suffix in ("", "_raw"):
+            # the raw blocks of products of more than MAX_RAW_IRREPS irreps are not bundled
+            for suffix in ("", "_raw") if len(p) <= MAX_RAW_IRREPS else ("",):
                 install(cg_database / (product_name(p) + suffix), data / "cg_database" / (product_name(p) + suffix))
     return failed
 
@@ -324,7 +331,9 @@ def main(argv=None):
         help="cg stage: only rebuild the final blocks from the bundled raw blocks (no projection)",
     )
     parser.add_argument("--jobs", type=int, default=1, help="CG products computed in parallel (default: 1)")
-    parser.add_argument("--max-n", type=int, default=3, help="max_n of the operator database (default: 3)")
+    parser.add_argument(
+        "--max-n", type=int, default=4, help="max_n of the operator database: V, A up to max_n indices (default: 4)"
+    )
     parser.add_argument(
         "--data-dir",
         type=Path,

@@ -39,6 +39,7 @@ Reference:
     https://doi.org/10.1103/PhysRevD.54.5705
 """
 
+import functools
 import itertools as it
 import subprocess
 import sys
@@ -127,13 +128,17 @@ class Operator:
     derivative).  Each entry c_{i₁…iₙ} is the CG coefficient that selects the
     appropriate linear combination of elementary tensors.
 
-    On construction the class computes and caches:
-    * ``O``  — the symbolic operator expression (for display/LaTeX).
-    * ``K``  — the tree-level kinematic factor as a SymPy expression.
+    On construction the class computes:
     * ``C``  — C-parity (+1, -1, or 'mixed').
     * ``tr`` — whether the trace Tr[cgmat] vanishes.
     * ``symm`` — index-permutation symmetry ('Symmetric', 'Antisymmetric',
       'Mixed Symmetry', or '[Invalid Operator]' for tensorial cases).
+
+    The symbolic attributes, which take most of the time, are computed on first
+    access and then cached, so that loading many operators stays fast:
+    * ``O``  — the symbolic operator expression (for display/LaTeX).
+    * ``K``  — the tree-level kinematic factor as a SymPy expression.
+    * ``p3corr_is_real``, ``latex_O``, ``latex_K`` — derived from them.
     * ``gamma_pol_index`` — index (0–5) of the polarisation projector used
       for computing K.  Default is 0, which reproduces the original
       Γ_pol = ½(1 + γ₄)(1 − iγ₁γ₂).  Call ``set_polarization_matrix()`` to switch
@@ -180,6 +185,8 @@ class Operator:
             The stored value can be changed after construction via
             ``set_polarization_matrix()``.
         """
+        if not 0 <= gamma_pol_index <= 5:
+            raise ValueError(f"gamma_pol_index must be 0–5, got {gamma_pol_index}.")
         self.cgmat = cgmat[:]
         self.id = id
         self.X = X
@@ -200,9 +207,8 @@ class Operator:
         else:  # V, A
             self.nder = self.n - 1
 
-        # Build symbolic representations.  These are computed once and cached.
-        self.O = symO_from_Cgmat(cgmat)
-        self.K = Kfactor_from_diracO(diracO_from_cgmat(cgmat, X), gamma_pol_index)
+        # The symbolic representations (O, K and what derives from them) are computed
+        # on first access: see the cached properties below.
 
         # Discrete symmetry properties.
         self.C = C_parity(cgmat, X)
@@ -218,16 +224,41 @@ class Operator:
             else:
                 self.symm = index_symm_index_fixed(cgmat, 0)
 
-        # The three-point correlator is real (imaginary) depending on the number
-        # of derivatives and the Dirac structure.  We determine this from the
-        # presence of the imaginary unit in the kinematic factor K.
-        self.p3corr_is_real = (I in self.K.atoms()) if self.nder % 2 == 1 else (I not in self.K.atoms())
+    # ------------------------------------------------------------------
+    # Symbolic representations, computed on first access and cached
+    # ------------------------------------------------------------------
 
-        # Pre-compute LaTeX strings for display.
-        self.latex_O = latexO_from_diracO(self.O, self.X)
-        self.latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
-        if '/' in self.latex_K:
-            self.latex_K = "\\frac{" + self.latex_K.split('/')[0] + "}{ " + self.latex_K.split('/')[1] + "}"
+    @functools.cached_property
+    def O(self) -> sym.Expr:  # noqa: E743 (the operator is called O throughout)
+        """Symbolic operator expression Σ c_{i₁…iₙ} O^X_{i₁…iₙ} (see symO_from_Cgmat)."""
+        return symO_from_Cgmat(self.cgmat)
+
+    @functools.cached_property
+    def K(self) -> sym.Expr:
+        """Tree-level kinematic factor, with the polarisation projector gamma_pol_index."""
+        return Kfactor_from_diracO(diracO_from_cgmat(self.cgmat, self.X), self.gamma_pol_index)
+
+    @functools.cached_property
+    def p3corr_is_real(self) -> bool:
+        """Whether the three-point correlator is real.
+
+        It is real or imaginary depending on the number of derivatives and the Dirac
+        structure; we determine this from the presence of the imaginary unit in K.
+        """
+        return (I in self.K.atoms()) if self.nder % 2 == 1 else (I not in self.K.atoms())
+
+    @functools.cached_property
+    def latex_O(self) -> str:
+        """LaTeX string of the operator expression O."""
+        return latexO_from_diracO(self.O, self.X)
+
+    @functools.cached_property
+    def latex_K(self) -> str:
+        """LaTeX string of the kinematic factor K."""
+        latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
+        if '/' in latex_K:
+            latex_K = "\\frac{" + latex_K.split('/')[0] + "}{ " + latex_K.split('/')[1] + "}"
+        return latex_K
 
     # ------------------------------------------------------------------
     # String representations
@@ -333,8 +364,8 @@ class Operator:
         """Change the polarisation projector and recompute the kinematic factor K.
 
         After this call ``self.gamma_pol_index``, ``self.K``,
-        ``self.p3corr_is_real``, and ``self.latex_K`` are all updated to
-        reflect the new projector.  All other attributes (cgmat, O, C, tr,
+        ``self.p3corr_is_real``, and ``self.latex_K`` all reflect the new
+        projector (K is recomputed on its next access).  All other attributes (cgmat, O, C, tr,
         symm, …) are unchanged.
 
         The six projectors, indexed 0–5, all have the form
@@ -370,13 +401,9 @@ class Operator:
         if not 0 <= gamma_pol_index <= 5:
             raise ValueError(f"gamma_pol_index must be 0–5, got {gamma_pol_index}.")
         self.gamma_pol_index = gamma_pol_index
-        # Recompute K with the chosen projector.
-        self.K = Kfactor_from_diracO(diracO_from_cgmat(self.cgmat, self.X), gamma_pol_index)
-        # Update the derived attributes that depend on K.
-        self.p3corr_is_real = (I in self.K.atoms()) if self.nder % 2 == 1 else (I not in self.K.atoms())
-        self.latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
-        if '/' in self.latex_K:
-            self.latex_K = "\\frac{" + self.latex_K.split('/')[0] + "}{ " + self.latex_K.split('/')[1] + "}"
+        # Forget K and what derives from it: they are recomputed, with the new projector, on next access.
+        for name in ("K", "p3corr_is_real", "latex_K"):
+            self.__dict__.pop(name, None)
 
     # ------------------------------------------------------------------
     # Kinematic factor evaluation
@@ -1935,10 +1962,10 @@ def h5_to_operator_list(file_path: str) -> list[Operator]:
 ###################### Execution as Main ############################
 
 if __name__ == "__main__":
-    # Default to max_n=3, matching the bundled operator database shipped with the package.
-    # Override by passing an integer as the first CLI argument: python moments_operator.py 4
+    # Default to max_n=4, matching the bundled operator database shipped with the package.
+    # Override by passing an integer as the first CLI argument: python moments_operator.py 3
     # Pass "SP" as the second CLI argument to also generate S and P operators.
-    max_n = 3
+    max_n = 4
     include_SP = False
     if len(sys.argv) > 1:
         try:

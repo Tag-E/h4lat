@@ -534,7 +534,8 @@ class cg_calc:
         prescription_changed : bool
             Re-apply CGmat_from_block to the stored raw symbolic matrices (without
             recomputing them) and save the new numerical matrices to the output
-            database (see cgdatabase).
+            database (see cgdatabase).  Raises FileNotFoundError if the raw matrices
+            are not stored, as for the bundled products of more than three irreps.
         parallel : bool or None
             When the CG coefficients are computed, do the sum over the group elements
             in parallel threads with numba (see n_threads).  The result is the same, to
@@ -551,6 +552,7 @@ class cg_calc:
         """
 
         self.chosen_irreps = kwarg
+        self._raw_cg = None  # see the raw_cg property
 
         # --- data paths -----------------------------------------------------------
         # The bundled package data are only read, never written: regenerated H(4)
@@ -771,32 +773,24 @@ class cg_calc:
             if verbose:
                 print("\nLoading the cg coefficients for the given tensor product from the database ...\n")
 
-            self.raw_cg = {}
-            # A changed prescription is saved like a new result: to the output database,
-            # together with the raw matrices it is derived from.
-            out_folder = self.cg_database_folder + '/' + product_name
+            # the raw blocks are only read when needed (see the raw_cg property)
+            self._raw_folder = self.cg_folder + "_raw"
+
             if prescription_changed:
+                # A changed prescription is saved like a new result: to the output database,
+                # together with the raw matrices it is derived from.
+                out_folder = self.cg_database_folder + '/' + product_name
+                raw_blocks = self.raw_cg  # raises before anything is written if they are not stored
                 Path(out_folder).mkdir(parents=True, exist_ok=True)
                 Path(out_folder + "_raw").mkdir(parents=True, exist_ok=True)
-
-            for file in _sorted_cg_files(self.cg_folder + "_raw"):
-                irep, m = (int(x) for x in file.stem.split("_"))
-                self.raw_cg[(irep, m)] = np.load(file, allow_pickle=True)
-
-                if prescription_changed:
+                for (irep, m), raw in raw_blocks.items():
                     if out_folder != self.cg_folder:
                         with open(f'{out_folder}_raw/{irep}_{m}.npy', 'wb') as f:
-                            np.save(f, self.raw_cg[(irep, m)])
+                            np.save(f, raw)
                     with open(f'{out_folder}/{irep}_{m}.npy', 'wb') as f:
-                        np.save(
-                            f,
-                            CGmat_from_block(
-                                self.raw_cg[(irep, m)], self.mul_list[irep], m, irreps=self.chosen_irreps
-                            ),
-                        )
-
-            if prescription_changed:
+                        np.save(f, CGmat_from_block(raw, self.mul_list[irep], m, irreps=self.chosen_irreps))
                 self.cg_folder = out_folder
+                self._raw_folder = out_folder + "_raw"
 
             # Files come in (irep, m) order, so cg_dict[irep][m] is always '{irep}_{m}.npy'
             # and the keys are sorted.
@@ -804,6 +798,34 @@ class cg_calc:
             for file in _sorted_cg_files(self.cg_folder):
                 irep = int(file.stem.split("_")[0])
                 self.cg_dict.setdefault(irep, []).append(np.load(file, allow_pickle=True))
+
+    @property
+    def raw_cg(self) -> dict[tuple[int, int], np.ndarray]:
+        """
+        Raw symbolic CG blocks {(irep, m): block}, from which CGmat_from_block derives cg_dict.
+
+        For a product loaded from a database they are read from '{product}_raw/' on first
+        access (they can be large: unpickling the symbolic expressions takes seconds).  They
+        are not bundled for products of more than three irreps: recompute those with
+        force_computation=True to get them.
+        """
+        if self._raw_cg is None:
+            folder = Path(self._raw_folder)
+            if not folder.is_dir():
+                raise FileNotFoundError(
+                    f"the raw CG blocks of {''.join(str(ir) for ir in self.chosen_irreps)} are not stored in "
+                    f"{folder} (they are not bundled for products of more than three irreps): "
+                    "recompute them with force_computation=True"
+                )
+            self._raw_cg = {
+                tuple(int(x) for x in file.stem.split("_")): np.load(file, allow_pickle=True)
+                for file in _sorted_cg_files(folder)
+            }
+        return self._raw_cg
+
+    @raw_cg.setter
+    def raw_cg(self, value: dict[tuple[int, int], np.ndarray]) -> None:
+        self._raw_cg = value
 
     def get_multiplicities(self) -> list[int]:
         """Return the multiplicity list for the tensor product under study."""
