@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 # Full feature set (operator construction, PDF output, plots, HDF5 I/O)
 full = [
+    "numba",
     "pylatex",
     "ipython",
     "matplotlib",
@@ -30,6 +31,10 @@ full = [
     "h5py",
     "pandas",
     "tabulate",   # needed by pandas .to_markdown()
+]
+# Parallel computation of new CG coefficients: cg_calc(..., parallel=True)
+parallel = [
+    "numba",
 ]
 # Minimal extra for Jupyter notebook pretty-printing
 notebook = [

@@ -85,6 +85,7 @@ pip install h4lat                   # core (numpy + sympy + tqdm only)
 pip install "h4lat[full]"           # + pylatex, IPython, matplotlib, gvar, h5py, pandas
 pip install "h4lat[notebook]"       # + IPython
 pip install "h4lat[operators]"      # + pandas, gvar, h5py, IPython
+pip install "h4lat[parallel]"       # + numba, to compute new CG coefficients on all cores
 ```
 
 For development:
@@ -151,7 +152,23 @@ for irep_idx, matrices in cg.cg_dict.items():
 ```python
 # Compute the (6,1) ⊗ (4,1) ⊗ (4,1) tensor product (tensor operator, with two derivatives)
 cg = cg_calc((6, 1), (4, 1), (4, 1))
+
+# Products of four irreps take about a minute; parallel=True sums over the group on all cores
+cg = cg_calc((6, 1), (4, 1), (4, 1), (4, 1), parallel=True)
+
+# ... or on 8 threads only (giving n_threads implies parallel=True)
+cg = cg_calc((6, 1), (4, 1), (4, 1), (4, 1), n_threads=8)
 ```
+
+The projection formula sums over the 384 group elements numerically, on the coefficients
+of the free symbols, so a product of four irreps such as (6,1) ⊗ (4,1)³ takes about a minute
+(it took days while the sum was done symbolically, until October 2026; the result is the same
+to the last bit).  With `parallel=True` the sum runs on all CPU cores with
+[numba](https://numba.pydata.org) (`pip install "h4lat[parallel]"`); use fewer threads with
+`n_threads=` (between 1 and the number of cores, or the environment variable `NUMBA_NUM_THREADS`
+if set).  The result does not depend on `parallel` or on the number of threads.  By default (`parallel=None`) products of three or more irreps are computed in
+parallel when numba is installed.  Most of the remaining time goes into the symbolic raw blocks
+saved in `{product}_raw/`, which are built serially.
 
 New results are written to `./cg_database` in the working directory (H(4) matrices
 regenerated with `force_h4gen=True` go to `./h4_ele`), never into the installed package.

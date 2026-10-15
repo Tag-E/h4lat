@@ -26,6 +26,8 @@ BUNDLED_PRODUCTS = [
 
 TINY = ((2, 1), (2, 1))  # 4-dimensional product, computed in a few seconds
 
+needs_numba = pytest.mark.skipif(not cc._NUMBA_AVAILABLE, reason="numba is not installed")
+
 
 def _params(values, *expected_failures):
     """pytest params for *values*; each (failing_values, reason) marks those as strict xfail."""
@@ -322,6 +324,172 @@ def test_products_with_a_one_dimensional_factor(h4, irreps, tmp_path, monkeypatc
     monkeypatch.chdir(tmp_path)  # the new CGs are written to ./cg_database
     cg_dict = cg_calc(*irreps, verbose=False).cg_dict
     _assert_blocks_transform_as_their_irrep(h4, irreps, cg_dict)
+    _assert_blocks_are_independent(irreps, cg_dict)
+
+
+def _symbolic_projection(h4_mat, irreps):
+    """Raw CG blocks computed as cg_calc did before the sum over the group was done numerically.
+
+    Σ_h T(h) A B(h)^T is summed with the symbolic matrix A, element by element (far too slow
+    beyond small products): the reference that the numerical projection must reproduce.
+    """
+    mul_list = cc.get_multiplicities(*irreps)
+    dim = int(np.prod([label[0] for label in irreps]))
+    A = sym.MatrixSymbol('A', dim, dim)
+    rep_to_use = [irep for irep, mul in enumerate(mul_list) for _ in range(mul)]
+
+    res_mat = np.zeros((dim, dim))
+    for ih in range(cc.n_ele_h4):
+        Tp = np.eye(1)
+        for label in irreps:
+            Tp = np.kron(Tp, h4_mat[irrep_index[label]][ih])
+        rows = [
+            [
+                h4_mat[ri][ih] if ib == jb else np.zeros((rep_dim_list[ri], rep_dim_list[rj]))
+                for jb, rj in enumerate(rep_to_use)
+            ]
+            for ib, ri in enumerate(rep_to_use)
+        ]
+        res_mat = res_mat + Tp @ A @ np.block(rows).T
+
+    rounded = np.empty((dim, dim), dtype=object)
+    for i in range(dim):
+        for j in range(dim):
+            new_entry = 0
+            for element in sym.Add.make_args(res_mat[i, j]):
+                coeff, monom = element.as_coeff_Mul()
+                if np.abs(coeff) < 1e-10 or np.abs(coeff) > 1e20:
+                    coeff = 0
+                new_entry = new_entry + coeff * monom
+            rounded[i, j] = new_entry
+
+    raw, d = {}, 0
+    for irep, mul in enumerate(mul_list):
+        for m in range(mul):
+            raw[(irep, m)] = rounded[:, d : d + rep_dim_list[irep]]
+            d += rep_dim_list[irep]
+    return raw
+
+
+def _assert_same_raw_blocks(raw, expected):
+    assert raw.keys() == expected.keys()
+    for key, block in raw.items():
+        assert block.shape == expected[key].shape
+        for entry, expected_entry in zip(block.ravel(), expected[key].ravel()):
+            assert sym.sympify(entry) == sym.sympify(expected_entry), f"raw block {key}: {entry} != {expected_entry}"
+
+
+def _assert_same_cg_dict(cg_dict, expected):
+    assert cg_dict.keys() == expected.keys()
+    for irep, blocks in cg_dict.items():
+        assert len(blocks) == len(expected[irep])
+        for m, (C, C_expected) in enumerate(zip(blocks, expected[irep])):
+            assert np.array_equal(C, C_expected), f"block {irep}_{m} {rep_label_list[irep]}"
+
+
+@pytest.mark.parametrize("irreps", _params([TINY, ((1, 4), (4, 1)), ((2, 1), (2, 1), (2, 1))]))
+def test_numerical_projection_reproduces_the_symbolic_sum(irreps, tmp_path):
+    """The raw blocks are those of the former symbolic sum over the group, to the last bit.
+
+    Both serially and in parallel (if numba is installed).  The products include factors
+    that are not signed permutation matrices, (2,1), and an irrep with multiplicity 2 in
+    (2,1)⊗(2,1)⊗(2,1).
+    """
+    expected = None
+    for parallel in [False, True] if cc._NUMBA_AVAILABLE else [False]:
+        folder = str(tmp_path / f"parallel_{parallel}")
+        cg = cg_calc(*irreps, cgdatabase=folder, force_computation=True, parallel=parallel, verbose=False)
+        if expected is None:
+            expected = _symbolic_projection(cg.h4_mat, irreps)
+            expected_cg = {}
+            for (irep, m), raw in expected.items():
+                expected_cg.setdefault(irep, []).append(cc.CGmat_from_block(raw, cg.mul_list[irep], m, irreps=irreps))
+        _assert_same_raw_blocks(cg.raw_cg, expected)
+        _assert_same_cg_dict(cg.cg_dict, expected_cg)
+
+
+@needs_numba
+def test_parallel_and_serial_computations_are_identical(tmp_path):
+    """parallel=True, with any number of threads, gives the same raw blocks and CG matrices as parallel=False."""
+    import numba
+
+    irreps = ((4, 1), (4, 1), (4, 1))
+    n_threads_before = numba.get_num_threads()
+    serial = cg_calc(
+        *irreps, cgdatabase=str(tmp_path / "serial"), force_computation=True, parallel=False, verbose=False
+    )
+    for n_threads in (None, 1, 2):
+        parallel = cg_calc(
+            *irreps,
+            cgdatabase=str(tmp_path / f"parallel_{n_threads}"),
+            force_computation=True,
+            parallel=True,
+            n_threads=n_threads,
+            verbose=False,
+        )
+        _assert_same_raw_blocks(parallel.raw_cg, serial.raw_cg)
+        _assert_same_cg_dict(parallel.cg_dict, serial.cg_dict)
+    assert numba.get_num_threads() == n_threads_before, "the numba setting of the caller was not restored"
+
+
+@needs_numba
+def test_n_threads_is_used(tmp_path, monkeypatch):
+    """The sum runs on n_threads threads; giving n_threads turns on the parallel computation, also for 2 irreps."""
+    import numba
+
+    kernel = cc._numba_projection_kernel()
+    used = []
+
+    def recording_kernel(*args):
+        used.append(numba.get_num_threads())
+        kernel(*args)
+
+    monkeypatch.setattr(cc, "_numba_projection_kernel", lambda: recording_kernel)
+    cg_calc(*TINY, cgdatabase=str(tmp_path), force_computation=True, n_threads=2, verbose=False)
+    assert used and set(used) == {2}
+
+
+@needs_numba
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        (dict(n_threads=0), "between 1 and"),
+        (dict(n_threads=10**6), "between 1 and"),
+        (dict(n_threads=2, parallel=False), "parallel=True"),
+    ],
+    ids=["zero", "too_many", "with_parallel_False"],
+)
+def test_n_threads_validation(kwargs, match, tmp_path):
+    """A number of threads that numba cannot use, or one given with parallel=False, is an error."""
+    with pytest.raises(ValueError, match=match):
+        cg_calc(*TINY, cgdatabase=str(tmp_path), force_computation=True, verbose=False, **kwargs)
+
+
+@pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
+def test_recomputed_products_match_the_bundled_data(irreps, tmp_path):
+    """Recomputing a bundled product reproduces the bundled CG matrices (up to floating-point noise).
+
+    Not to the last bit: scripts/regenerate_data.py only rewrites the files that change by more
+    than 1e-10, so some bundled files come from older versions of the code, and the last bit of
+    CGmat_from_block (the SVDs in np.linalg.pinv) depends on the OpenBLAS kernel of the CPU.
+    """
+    bundled = cg_calc(*irreps, verbose=False).cg_dict
+    computed = cg_calc(*irreps, cgdatabase=str(tmp_path), force_computation=True, verbose=False).cg_dict
+    assert computed.keys() == bundled.keys()
+    for irep, blocks in computed.items():
+        for m, (C, C_bundled) in enumerate(zip(blocks, bundled[irep])):
+            assert np.allclose(C, C_bundled, rtol=0, atol=1e-12), f"block {irep}_{m} {rep_label_list[irep]}"
+
+
+def test_parallel_without_numba(tmp_path, monkeypatch):
+    """Without numba, parallel=True or n_threads is an error, and by default products of 3 irreps are computed serially."""
+    monkeypatch.setattr(cc, "_NUMBA_AVAILABLE", False)
+    monkeypatch.setattr(cc, "_numba_projection_kernel", lambda: pytest.fail("numba was used"))
+    for kwargs in (dict(parallel=True), dict(n_threads=2)):
+        with pytest.raises(ImportError, match="numba"):
+            cg_calc(*TINY, cgdatabase=str(tmp_path), force_computation=True, verbose=False, **kwargs)
+    irreps = ((2, 1), (2, 1), (2, 1))
+    cg_dict = cg_calc(*irreps, cgdatabase=str(tmp_path), force_computation=True, verbose=False).cg_dict
     _assert_blocks_are_independent(irreps, cg_dict)
 
 

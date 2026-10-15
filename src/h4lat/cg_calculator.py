@@ -29,8 +29,10 @@ dimension; this labelling follows Baake et al. (1982) [J. Math. Phys. 23, 944].
 
 CG coefficients are computed via the projection formula of Sakata (1974)
 [J. Math. Phys. 15, 1702]: summing the tensor-product matrices against the
-target irrep matrices over all group elements extracts the CG vectors
-symbolically.  The resulting free parameters (freedom within degenerate
+target irrep matrices over all group elements extracts the CG vectors as
+linear forms in a matrix of free symbols A.  The sum is done numerically, on
+the coefficients of these forms (see _projection), optionally in parallel with
+numba.  The resulting free parameters (freedom within degenerate
 subspaces) are fixed by CGmat_from_block, which picks one independent copy
 of the irrep for each unit of multiplicity, each with a definite C-parity
 (symmetric or antisymmetric under reversal of the derivative indices).
@@ -42,9 +44,11 @@ Module-level helpers: get_multiplicities, latex_print_multiplicities.
 
 ######################## Library Imports ################################
 
+import functools
 import sys
 import time
 from importlib.resources import files as _resource_files
+from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
@@ -66,6 +70,9 @@ try:
     _IPYTHON_AVAILABLE = True
 except ImportError:
     _IPYTHON_AVAILABLE = False
+
+# numba (optional, for cg_calc(parallel=True)) is only imported when it is used: see _numba_projection_kernel
+_NUMBA_AVAILABLE = find_spec("numba") is not None
 
 
 ######################## Package Data Paths #############################
@@ -503,6 +510,8 @@ class cg_calc:
         force_computation: bool = False,
         force_h4gen: bool = False,
         prescription_changed: bool = False,
+        parallel: bool | None = None,
+        n_threads: int | None = None,
         verbose: bool = True,
     ) -> None:
         """
@@ -526,6 +535,17 @@ class cg_calc:
             Re-apply CGmat_from_block to the stored raw symbolic matrices (without
             recomputing them) and save the new numerical matrices to the output
             database (see cgdatabase).
+        parallel : bool or None
+            When the CG coefficients are computed, do the sum over the group elements
+            in parallel threads with numba (see n_threads).  The result is the same, to
+            the last bit, as without.  None (default) means True for a product of three
+            or more irreps, or if n_threads is given, provided that numba is installed;
+            else False.  True requires numba (pip install "h4lat[parallel]").
+        n_threads : int or None
+            Number of threads of the parallel computation, between 1 and the number
+            of CPU cores (or the environment variable NUMBA_NUM_THREADS, if set).
+            None (default) uses all of them.  Giving it implies parallel=True; it
+            cannot be combined with parallel=False.
         verbose : bool
             Print progress messages.
         """
@@ -641,109 +661,91 @@ class cg_calc:
             if verbose:
                 print(f"\nComputing the cg coefficients for the tensor product {self.chosen_irreps} ...\n")
 
-            dim = 1
-            for rep in self.chosen_irreps:
-                dim *= irrep_dim[rep]
-
-            A = sym.MatrixSymbol('A', dim, dim)
-            res_mat = np.zeros((dim, dim))
+            if n_threads is not None:
+                if parallel is False:
+                    raise ValueError(
+                        "n_threads is the number of threads of the parallel computation: use parallel=True"
+                    )
+                parallel = True
+            if parallel is None:
+                parallel = len(self.chosen_irreps) >= 3 and _NUMBA_AVAILABLE
+                if verbose and len(self.chosen_irreps) >= 3 and not _NUMBA_AVAILABLE:
+                    print('\nnumba is not installed: the computation runs serially (pip install "h4lat[parallel]")\n')
+            elif parallel and not _NUMBA_AVAILABLE:
+                raise ImportError(
+                    'the parallel computation (parallel=True or n_threads) needs numba.  '
+                    'Install it with: pip install "h4lat[parallel]"'
+                )
+            if parallel:
+                max_threads = _numba_max_threads()
+                if n_threads is None:
+                    n_threads = max_threads
+                elif not 1 <= n_threads <= max_threads:
+                    raise ValueError(
+                        f"n_threads must be between 1 and {max_threads}, the number of threads numba may use "
+                        f"(the CPU cores, or the environment variable NUMBA_NUM_THREADS), not {n_threads}"
+                    )
 
             if verbose:
-                print("\nLooping over group elements...\n")
-
-            time_start_loop = time.time()
-            totalT_mat_construction = 0
-            totalT_mat_mul = 0
+                how = f"in parallel on {n_threads} threads, with numba" if parallel else "serially"
+                print(
+                    f"\nSumming over the group elements ({how}) ... "
+                    "(loop over irreps: one step per copy of each irrep in the decomposition)\n"
+                )
 
             # Sakata projection formula (J. Math. Phys. 15, 1702, 1974):
-            #   res_mat += T(h) @ A @ B(h)^T  for each h ∈ H(4),
+            #   res_mat = Σ_h T(h) @ A @ B(h)^T,  h ∈ H(4),
             # where T(h) is the tensor-product representation of h, B(h) is
             # the block-diagonal target representation (one block per irrep
             # copy in the decomposition), and A is a symbolic dim×dim matrix.
-            # After summation, each column of res_mat is a linear form in the
-            # A_{ij}; the coefficients are the CG matrix entries, with the
-            # A_{ij} labelling the remaining freedom.
-            for ih in tqdm(range(self.n_ele_h4)):
-                time_before_construction = time.time()
+            # Each column of res_mat is a linear form in the A_{ij}; the
+            # coefficients are the CG matrix entries, with the A_{ij} labelling
+            # the remaining freedom.  The sum is done numerically, on these
+            # coefficients: the coefficient of A[k, l] in res_mat[i, j] is
+            # Σ_h T(h)[i, k] B(h)[j, l], and as B(h) is block-diagonal, the
+            # coefficients of a block are those of its irrep (_projection),
+            # computed once for all the copies of the irrep.
+            time_start_loop = time.time()
+            totalT_projection = 0
 
-                Tp = np.eye(1)
-                for rep in kwarg:
-                    Tp = np.kron(Tp, self.h4_mat[irrep_index[rep]][ih])
+            T = _product_matrices(self.h4_mat, self.chosen_irreps)
+            dim = T.shape[1]
+            A = sym.MatrixSymbol('A', dim, dim)
 
-                nblocks = np.sum(self.mul_list)
-                rows = [[] for _ in range(nblocks)]
-
-                rep_to_use = []
+            self.raw_cg = {}
+            offset = 0  # column of res_mat where the block of the current copy starts
+            with tqdm(total=int(np.sum(self.mul_list)), disable=not verbose) as progress_bar:
                 for irep, mul in enumerate(self.mul_list):
-                    for _ in range(mul):
-                        rep_to_use.append(irep)
-
-                for ib in range(nblocks):
-                    rep_i = rep_to_use[ib]
-                    for jb in range(nblocks):
-                        rep_j = rep_to_use[jb]
-                        if ib == jb:
-                            rows[ib].append(self.h4_mat[rep_i][ih])
-                        else:
-                            rows[ib].append(np.zeros((rep_dim_list[rep_i], rep_dim_list[rep_j])))
-
-                Bd = np.block(rows)
-
-                time_before_mul = time.time()
-                res_mat = res_mat + Tp @ A @ Bd.T
-                time_after_mul = time.time()
-
-                totalT_mat_construction += time_before_mul - time_before_construction
-                totalT_mat_mul += time_after_mul - time_before_mul
+                    if mul == 0:
+                        continue
+                    time_before_projection = time.time()
+                    coeffs = _projection(
+                        _element_matrices(self.h4_mat, irep), T, parallel=parallel, n_threads=n_threads
+                    )
+                    totalT_projection += time.time() - time_before_projection
+                    for m in range(mul):
+                        self.raw_cg[(irep, m)] = _raw_block(coeffs, offset, A)
+                        offset += rep_dim_list[irep]
+                        progress_bar.update()
+            del T, coeffs
 
             time_end_loop = time.time()
 
-            # Zero out floating-point noise: coefficients with |c| < eps are
-            # rounding artefacts; |c| > infth flags a divergent symbolic entry.
-            rounded_res = np.empty((dim, dim), dtype=object)
-            eps = 10 ** (-10)
-            infth = 10**20
-
-            for i in range(dim):
-                for j in range(dim):
-                    entry = sym.Add.make_args(res_mat[i, j])
-                    new_entry = 0
-                    for element in entry:
-                        coeff = element.as_coeff_Mul()[0]
-                        monom = element.as_coeff_Mul()[1]
-                        if np.abs(coeff) < eps or np.abs(coeff) > infth:
-                            coeff = 0
-                        new_entry = new_entry + coeff * monom
-                    rounded_res[i, j] = new_entry
-
-            time_end_rounding = time.time()
-
             self.cg_dict = {}
-            self.raw_cg = {}
-            d = 0
-            for irep, mul in enumerate(self.mul_list):
-                for m in range(mul):
-                    if irep not in self.cg_dict.keys():
-                        self.cg_dict[irep] = []
-                    self.raw_cg[(irep, m)] = rounded_res[:, d : d + rep_dim_list[irep]]
-                    self.cg_dict[irep].append(
-                        CGmat_from_block(self.raw_cg[(irep, m)], mul, m, irreps=self.chosen_irreps)
-                    )
-                    d += rep_dim_list[irep]
+            for (irep, m), raw in self.raw_cg.items():
+                self.cg_dict.setdefault(irep, []).append(
+                    CGmat_from_block(raw, self.mul_list[irep], m, irreps=self.chosen_irreps)
+                )
 
             time_end_evaluation = time.time()
 
             totalT_loop = time_end_loop - time_start_loop
-            totalT_rounding = time_end_rounding - time_end_loop
-            totalT_evaluating = time_end_evaluation - time_end_rounding
-            totalT = totalT_loop + totalT_rounding + totalT_evaluating
+            totalT_evaluating = time_end_evaluation - time_end_loop
+            totalT = totalT_loop + totalT_evaluating
 
             if verbose:
                 print(
-                    f"\nH(4) Loop time: {round(totalT_loop,2)} s\nMatrix Construction Time: {round(totalT_mat_construction/totalT_loop*100,2)}%\nMatrix Multiplication Time: {round(totalT_mat_mul/totalT_loop*100,2)}%\n"
-                )
-                print(
-                    f"\nTotal Time (Loop+Rounding+Evaluation): {round(totalT,2)} s\nLoop: {round(totalT_loop/totalT*100,2)}%\nRounding: {round(totalT_rounding/totalT*100,2)}%\nEvaluation: {round(totalT_evaluating/totalT*100,2)}%\n"
+                    f"\nTotal Time (Projection+Raw blocks+Evaluation): {round(totalT,2)} s\nProjection: {round(totalT_projection/totalT*100,2)}%\nRaw blocks: {round((totalT_loop-totalT_projection)/totalT*100,2)}%\nEvaluation: {round(totalT_evaluating/totalT*100,2)}%\n"
                 )
 
             if verbose:
@@ -914,6 +916,121 @@ def latex_print_multiplicities(
         display(MathDisplay(out_str))
 
     return out_str if return_str else None
+
+
+def _element_matrices(h4_mat: list[list[np.ndarray]], irep: int) -> np.ndarray:
+    """The matrices of all the elements of H(4) in the irrep of index *irep*, as an (n_ele_h4, d, d) array."""
+    d = rep_dim_list[irep]
+    return np.array([np.reshape(ele, (d, d)) for ele in h4_mat[irep]], dtype=float)
+
+
+def _product_matrices(h4_mat: list[list[np.ndarray]], irreps: tuple[tuple[int, int], ...]) -> np.ndarray:
+    """T(h) = D_1(h) ⊗ … ⊗ D_n(h) for every element h of H(4), as an (n_ele_h4, dim, dim) array."""
+    factors = [_element_matrices(h4_mat, irrep_index[rep]) for rep in irreps]
+    dim = int(np.prod([D.shape[1] for D in factors]))
+    T = np.empty((n_ele_h4, dim, dim))
+    for ih in range(n_ele_h4):
+        Tp = np.eye(1)
+        for D in factors:
+            Tp = np.kron(Tp, D[ih])
+        T[ih] = Tp
+    return T
+
+
+def _projection(D: np.ndarray, T: np.ndarray, parallel: bool = False, n_threads: int | None = None) -> np.ndarray:
+    """
+    Coefficients of the Sakata projection onto one irrep.
+
+    Parameters
+    ----------
+    D : ndarray
+        Matrices of all the group elements in the irrep, shape (n_ele, d, d).
+    T : ndarray
+        Matrices of all the group elements in the tensor product, shape (n_ele, dim, dim).
+    parallel : bool
+        Run the loop in parallel threads with numba (numba must be installed).
+    n_threads : int or None
+        Number of threads when *parallel*; None means all those numba may use
+        (_numba_max_threads).  The caller's numba setting is restored afterwards.
+
+    Returns
+    -------
+    ndarray
+        P of shape (d, d, dim, dim), with P[c, l, i, k] = Σ_h D[h, c, l] T[h, i, k]: the
+        coefficient of A[k, l] in entry (i, c) of Σ_h T(h) A D(h)^T.
+
+    Notes
+    -----
+    The sum runs over h in order, as the symbolic loop that this function replaces did
+    (res_mat = res_mat + T(h) @ A @ B(h)^T), so the coefficients are the same to the last
+    bit.  In parallel every thread computes all the terms of its own entries, again with
+    h in order, so the result does not depend on *parallel* or on the number of threads.
+    """
+    D = np.ascontiguousarray(D, dtype=float)
+    T = np.ascontiguousarray(T, dtype=float)
+    d, dim = D.shape[1], T.shape[1]
+    P = np.zeros((d, d, dim, dim))
+    if parallel:
+        import numba
+
+        kernel = _numba_projection_kernel()
+        previous_n_threads = numba.get_num_threads()
+        numba.set_num_threads(_numba_max_threads() if n_threads is None else n_threads)
+        try:
+            kernel(D, T, P)
+        finally:
+            numba.set_num_threads(previous_n_threads)
+    else:
+        for h in range(len(D)):
+            P += np.multiply.outer(D[h], T[h])
+    return P
+
+
+def _numba_max_threads() -> int:
+    """The number of threads numba may use: the CPU cores, or the environment variable NUMBA_NUM_THREADS if set."""
+    import numba
+
+    return numba.config.NUMBA_NUM_THREADS
+
+
+@functools.cache
+def _numba_projection_kernel():
+    """The loop of _projection compiled with numba, which is imported and compiles it on first use."""
+    import numba
+
+    @numba.njit(parallel=True)
+    def kernel(D, T, P):
+        n_ele, d, _ = D.shape
+        dim = T.shape[1]
+        # rows i of the result in parallel; for each entry the terms are added with h in order
+        for i in numba.prange(dim):
+            for h in range(n_ele):
+                for c in range(d):
+                    for l in range(d):
+                        b = D[h, c, l]
+                        if b != 0.0:  # a zero term would leave the entry unchanged
+                            for k in range(dim):
+                                P[c, l, i, k] += b * T[h, i, k]
+
+    return kernel
+
+
+def _raw_block(coeffs: np.ndarray, offset: int, A: sym.MatrixSymbol, eps: float = 1e-10, infth: float = 1e20):
+    """
+    Symbolic CG block of one copy of an irrep, from the coefficients given by _projection.
+
+    Entry (i, c) is Σ_{k,l} coeffs[c, l, i, k] A[k, offset + l], where *offset* is the
+    column at which the block of this copy starts.  Coefficients with |c| < eps are
+    floating-point noise and |c| > infth flags a divergent entry: both are dropped.
+    """
+    d, dim = coeffs.shape[0], coeffs.shape[2]
+    block = np.empty((dim, d), dtype=object)
+    for i in range(dim):
+        for c in range(d):
+            entry = coeffs[c, :, i, :]  # entry[l, k] is the coefficient of A[k, offset + l]
+            ls, ks = np.nonzero((np.abs(entry) >= eps) & (np.abs(entry) <= infth))
+            block[i, c] = sym.Add(*[sym.Float(entry[l, k]) * A[k, offset + l] for l, k in zip(ls, ks)])
+    return block
 
 
 def _c_parity_permutation(irreps: tuple[tuple[int, int], ...]) -> np.ndarray | None:
