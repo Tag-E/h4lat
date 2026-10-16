@@ -1,5 +1,6 @@
 """Basic tests for the h4lat package."""
 
+import itertools as it
 import os
 import re
 import shutil
@@ -36,7 +37,7 @@ from h4lat import (
 )
 from h4lat.cli import catalogue_main
 from h4lat.kinematic_data import E, I, mN, p1, p2, p3
-from h4lat.moments_operator import _catalogue_selection, _compute_kinematic_factors, _exact_number
+from h4lat.moments_operator import _catalogue_selection, _compute_kinematic_factors, _exact_number, trace_symm
 
 # ---------------------------------------------------------------------------
 # Group constants
@@ -519,6 +520,32 @@ def test_op_selection_has_definite_c_parity():
             assert op.irrep is not None and op.C in (1, -1), f"n_der={n_der}, operator {op.id}"
     for op in get_op_selection(2)[11:]:
         assert (op.irrep, op.block, op.C) == ((6, 2), 1, -1), f"operator {op.id}"
+
+
+def test_op_selection_labels():
+    """Every selected operator carries its label as id."""
+    expected = {
+        1: ["V1", "V2", "V3", "A1", "A2", "T1", "T2", "T3", "T4"],
+        2: ["V1", "V2", "V3", "V4", "A1", "A2", "A3", "A4", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"],
+        3: ["V", "A", "T1", "T2", "T1'", "T2'"],
+    }
+    for n_der, ids in expected.items():
+        assert [op.id for op in get_op_selection(n_der)] == ids, f"n_der={n_der}"
+
+
+def test_op_selection_three_derivatives():
+    """3 derivatives: V and A are {1,2,3,4}; the (4,2) tensors have K != 0 and traceless differences T - T'."""
+    opV, opA, opT1, opT2, opT1p, opT2p = get_op_selection(3)
+    # the completely symmetric combination of 4 indices
+    symmetric = np.zeros((4, 4, 4, 4))
+    symmetric[tuple(np.array(list(it.permutations(range(4)))).T)] = 1.0
+    assert (opV.X, opV.irrep, opV.C) == ("V", (1, 2), 1) and np.array_equal(opV.cgmat, symmetric)
+    assert (opA.X, opA.irrep, opA.C) == ("A", (1, 3), -1) and np.array_equal(opA.cgmat, symmetric)
+    for op in (opT1, opT2, opT1p, opT2p):
+        assert (op.X, op.irrep, op.C) == ("T", (4, 2), 1), f"operator {op.id}"
+        assert sym.simplify(op.K) != 0, f"operator {op.id}"
+    assert trace_symm((opT1 - opT1p).cgmat, "T") == "= 0"
+    assert trace_symm((opT2 - opT2p).cgmat, "T") == "= 0"
 
 
 def test_get_OperatorList_in_public_api():

@@ -335,7 +335,7 @@ ops1 = get_op_selection(n_der=1)
 # 2 derivatives: 4 vector + 4 axial + 9 tensor operators
 ops2 = get_op_selection(n_der=2)
 
-# 3 derivatives: 1 vector + 1 axial operator
+# 3 derivatives: 1 vector + 1 axial + 4 tensor operators
 ops3 = get_op_selection(n_der=3)
 
 for op in ops1:

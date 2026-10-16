@@ -1333,7 +1333,8 @@ def get_op_selection(n_der: int) -> list[Operator]:
     -------
     list[Operator]
         Ordered list: [opV1, opV2, ..., opA1, opA2, ..., opT1, opT2, ...]
-        For n_der=3 the list is [opV, opA].
+        For n_der=3 the list is [opV, opA, opT1, opT2, opT1p, opT2p].
+        Each operator's ``id`` is set to its label ("V1", "A2", "T1'", ...).
 
     Raises
     ------
@@ -1359,6 +1360,17 @@ def get_op_selection(n_der: int) -> list[Operator]:
         # irrep (8,2)
         opT3 =  Operator_from_database(55) + 1/2 * Operator_from_database(51) # = 124 - 241
         opT4 = 2 * Operator_from_database(55)
+
+        # Set custom labels
+        opV1.id = "V1"
+        opV2.id = "V2"
+        opV3.id = "V3"
+        opA1.id = "A1"
+        opA2.id = "A2"
+        opT1.id = "T1"
+        opT2.id = "T2"
+        opT3.id = "T3"
+        opT4.id = "T4"
 
         return [opV1, opV2, opV3, opA1, opA2, opT1, opT2, opT3, opT4]
 
@@ -1416,28 +1428,43 @@ def get_op_selection(n_der: int) -> list[Operator]:
                 opT1, opT2, opT3, opT4, opT5, opT6, opT7, opT8, opT9]
 
     if n_der == 3:
-        # Construct the matrix corresponding to the completely symmetric combination of 4 indices
-        matrix = np.zeros((4, 4, 4, 4), dtype=float)
-        perms = np.array(list(it.permutations(range(4))))
-        matrix[tuple(perms.T)] = 1.0
+        # Vector - irrep (1,2) - C=+1
+        opV = Operator_from_database(285) # = {1,2,3,4} (completely symmetric combination of 4 indices)
 
-        # Vector - irrep (1,2)
-        opV = Operator(cgmat=matrix,         # = {1,2,3,4} (completely symmetric combination of 4 indices)
-                       id="V",
-                       X="V",
-                       irrep=(1, 2),
-                       block=1,
-                       index_block=1)
+        # Axial - irrep (1,3) - C=-1
+        opA = Operator_from_database(538) # = {1,2,3,4} (completely symmetric combination of 4 indices)
 
-        # Axial - irrep (1,3)
-        opA = Operator(cgmat=matrix,         # = {1,2,3,4} (completely symmetric combination of 4 indices)
-                       id="A",
-                       X="A",
-                       irrep=(1, 3),
-                       block=1,
-                       index_block=1)
+        # Tensor - irrep (4,2) - C=+1
+        # Kinematic factor K != 0
+        opT1 = Operator_from_database(833) + 2*Operator_from_database(837) # 2 x 1,a,b,1,c + 1,a,1,b,c  + 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
+        opT2 = Operator_from_database(834) + 2*Operator_from_database(838) # 2 x 2,a,b,2,c + 2,a,2,b,c  + 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
+        opT1p = Operator_from_database(841) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(2,3,4) )
+        opT2p = Operator_from_database(842) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(1,3,4) )
+        # (opT1 - opT1p) is traceless (not counting the renormalization mixing)
+        # (opT2 - opT2p) is traceless (not counting the renormalization mixing)
+        # the operators opT3, opT4, opT3p, opT4p have K proportional to px-py, so they cannot be used with our dataset
 
-        return [opV, opA]
+        # Kinematic factor K = 0 - not interesting combination (linearly independent from the K!=0 ones)
+        # opT1_K0 = -( Operator_from_database(833) - 2*Operator_from_database(837) ) # 2 x 1,a,b,1,c - 1,a,1,b,c  - 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
+        # opT2_K0 = -( Operator_from_database(834) - 2*Operator_from_database(838) ) # 2 x 2,a,b,2,c - 2,a,2,b,c  - 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
+        # opT1p_K0 = Operator_from_database(841) - 2*Operator_from_database(845) # a,b,a,a,c + a,b,c,a,a - 2 x a,b,a,c,a ( a,b,c summed over Permutations(2,3,4) )
+        # opT2p_K0 = Operator_from_database(842) - 2*Operator_from_database(846) # a,b,a,a,c + a,b,c,a,a - 2 x a,b,a,c,a ( a,b,c summed over Permutations(1,3,4) )
+        # (opT1_K0 - opT1p_K0) is traceless (not counting the renormalization mixing)
+        # (opT2_K0 - opT2p_K0) is traceless (not counting the renormalization mixing)
+        # opT1_K0.id = "T1_K0"
+        # opT2_K0.id = "T2_K0"
+        # opT1p_K0.id = "T1'_K0"
+        # opT2p_K0.id = "T2'_K0"
+
+        # Set custom labels (p stands for prime)
+        opV.id = "V"
+        opA.id = "A"
+        opT1.id = "T1"
+        opT2.id = "T2"
+        opT1p.id = "T1'"
+        opT2p.id = "T2'"
+
+        return [opV, opA, opT1, opT2, opT1p, opT2p]
 
     raise ValueError(f"n_der must be 1, 2, or 3, got {n_der}.")
 
