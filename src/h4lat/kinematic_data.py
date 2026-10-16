@@ -39,10 +39,12 @@ Contains:
     the Operator class.
   - Backward-compatible aliases ``Gamma_pol``, ``Gamma_pol_s``, and ``den_K``
     that point to index 0 (the original hardcoded default).
-  - numerics_to_latex_conv: float → LaTeX string lookup table used
-    when printing operator coefficients.
+  - latex_conversion_table(): float → LaTeX string lookup table used
+    when printing operator coefficients, built on first use (also available
+    as the module attribute ``numerics_to_latex_conv``).
 """
 
+import functools
 from math import gcd
 
 import numpy as np
@@ -106,10 +108,11 @@ _gamma_pol_pairs = [
 ]
 _gamma_pol_pair_labels = ["12", "13", "23", "14", "24", "34"]
 
-Gamma_pol_list: list = [
-    0.5 * (Id_4 + gamma4) @ (Id_4 - I * ga @ gb)
-    for ga, gb in _gamma_pol_pairs
-]
+# The factor ½ is an exact sympy Rational, not the float 0.5: the kinematic factor K is
+# computed in exact arithmetic (see moments_operator.diracO_from_cgmat), and a float here
+# would turn e.g. 0.5 · ⅓ back into a float, so that terms that should cancel in K leave
+# a residue of order 1e-16 instead of exactly 0.
+Gamma_pol_list: list = [sym.Rational(1, 2) * (Id_4 + gamma4) @ (Id_4 - I * ga @ gb) for ga, gb in _gamma_pol_pairs]
 """List of six 4×4 polarisation projector matrices, one per gamma pair.
 
 ``Gamma_pol_list[k]`` is  ½(1 + γ₄)(1 − i γ_a γ_b)  for pair ``k``.
@@ -186,26 +189,69 @@ Kept for backward compatibility; prefer ``den_K_list`` in new code.
 
 ######################## Numeric → LaTeX Conversion Dict #################
 
-# Pre-build a lookup table mapping floats → LaTeX strings for fractions and
-# 1/√n expressions, used by latexO_from_diracO() when printing CG coefficients.
+# A lookup table mapping floats → LaTeX strings for fractions and 1/√n
+# expressions, used by latexO_from_diracO() when printing CG coefficients.
 # is_square() filters perfect-square denominators since √(n²) = n is already
 # covered by the integer/fraction case; gcd filtering keeps only reduced fractions.
+#
+# The table has about 2.8 million entries and takes a few seconds to build, so it
+# is built on first use (by latex_conversion_table) rather than at import time:
+# importing h4lat stays fast, and so do the worker processes that operator_show
+# starts to compute kinematic factors, which never print a coefficient.
 max_int = 1000
-numerics_to_latex_conv: dict = {}
 
-for num in range(1, max_int + 1):
-    for den in range(2, max_int + 1):
-        if gcd(num, den) == 1:
-            numerics_to_latex_conv[num / den] = r"\frac{" + str(num) + r"}{" + str(den) + r"}"
-            numerics_to_latex_conv[np.round(num / den, decimals=13)] = r"\frac{" + str(num) + r"}{" + str(den) + r"}"
 
-        if is_square(den) is False and num / np.sqrt(den) not in numerics_to_latex_conv:
-            numerics_to_latex_conv[num / np.sqrt(den)] = r"\frac{" + str(num) + r"}{\sqrt{" + str(den) + r"}}"
-            numerics_to_latex_conv[np.round(num / np.sqrt(den), decimals=13)] = (
-                r"\frac{" + str(num) + r"}{\sqrt{" + str(den) + r"}}"
-            )
+@functools.cache
+def latex_conversion_table() -> dict:
+    """Return the float → LaTeX lookup table used to print CG coefficients.
 
-    if num != 1:
-        numerics_to_latex_conv[num] = str(num)
-    else:
-        numerics_to_latex_conv[num] = ""
+    The keys are the floats num/den (reduced fractions) and num/√den (den not a
+    perfect square), each also rounded to 13 decimals, plus the integers
+    1 … ``max_int``; the values are the LaTeX strings ``\\frac{num}{den}``,
+    ``\\frac{num}{\\sqrt{den}}`` or ``num`` (``""`` for 1).  When several
+    (num, den) give the same √-value, the first one in the loop order wins.
+
+    Built on the first call and cached; the module attribute
+    ``numerics_to_latex_conv`` returns the same dict.
+    """
+    table: dict = {}
+
+    # Quantities that depend only on the denominator are computed once per
+    # denominator instead of once per (num, den) pair.  They are the very same
+    # numpy values as before (np.sqrt(den), is_square(den)), so the table is
+    # identical, keys and insertion order included.
+    sqrt_den = {den: np.sqrt(den) for den in range(2, max_int + 1)}
+    den_is_not_square = {den: is_square(den) is False for den in range(2, max_int + 1)}
+
+    for num in range(1, max_int + 1):
+        for den in range(2, max_int + 1):
+            if gcd(num, den) == 1:
+                frac = r"\frac{" + str(num) + r"}{" + str(den) + r"}"
+                table[num / den] = frac
+                table[np.round(num / den, decimals=13)] = frac
+
+            if den_is_not_square[den]:
+                value = num / sqrt_den[den]
+                # Keep the first (num, den) that produces this value.
+                if value not in table:
+                    frac_sqrt = r"\frac{" + str(num) + r"}{\sqrt{" + str(den) + r"}}"
+                    table[value] = frac_sqrt
+                    table[np.round(value, decimals=13)] = frac_sqrt
+
+        # Integers: the coefficient 1 is not printed at all.
+        table[num] = str(num) if num != 1 else ""
+
+    return table
+
+
+def __getattr__(name: str):
+    """Module-level attribute hook (PEP 562).
+
+    Keeps ``kinematic_data.numerics_to_latex_conv`` (and
+    ``from h4lat.kinematic_data import numerics_to_latex_conv``) working now
+    that the table is built on first use: the attribute is resolved here, by
+    building (or fetching the cached) table.
+    """
+    if name == "numerics_to_latex_conv":
+        return latex_conversion_table()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

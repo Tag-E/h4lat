@@ -107,7 +107,7 @@ Jupyter notebooks with worked examples are provided in the [`examples/`](example
 |----------|-------------|
 | [`quickstart.ipynb`](examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
 | [`operator_algebra.ipynb`](examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
-| [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Complete listing of every operator in the bundled database, organised by Dirac structure, number of indices, and H(4) irrep |
+| [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Listing of every operator with up to two derivatives in the bundled database (IDs 1–280), organised by Dirac structure, number of indices, and H(4) irrep |
 | [`operators_mixing_free.ipynb`](examples/operators_mixing_free.ipynb) | Operators free of mixing with lower or equal dimensional operators, for 1 derivative ([arXiv:2401.05360](https://arxiv.org/abs/2401.05360)), 2 derivatives ([arXiv:2605.02808](https://arxiv.org/abs/2605.02808)), and 3 derivatives (work in preparation) |
 
 A Google Colab notebook with some minimal working examples can be found [here](https://colab.research.google.com/drive/1KFnE0hi4XDNyo2Kg8iDKSSEqY1YQkPGZ?usp=sharing).
@@ -269,23 +269,56 @@ database with `make_operator_database`.
 
 ### Operator catalogue (PDF)
 
-To browse the database, write a PDF catalogue of all its operators.  For each operator
-it lists the expression, the kinematic factor, the C-parity, the trace condition and the
-index symmetry, grouped by Dirac structure, number of indices and H(4) irrep:
+To browse the database, write a PDF catalogue of its operators.  For each operator it
+lists the expression, the kinematic factor, the C-parity, the trace condition and the
+index symmetry, grouped by Dirac structure, number of indices and H(4) irrep.
+
+Computing the kinematic factors takes most of the time, so by default the catalogue holds
+the V, A and T operators with one and two derivatives (IDs 1–280: about 30 s on a laptop,
+20 s with `-j`; the whole database takes about a minute with `-j`).  Select other
+operators by Dirac structure (`-X`) and number of derivatives (`--nder`), or with keys made
+of the Dirac structure followed by the number of derivatives (`--keys V2 V3 A3`: `V2` is the
+vector operators with two derivatives, i.e. three Lorentz indices).  `-j` computes the
+kinematic factors on several processes (`-j` alone: all cores):
 
 ```bash
-h4lat-catalogue                           # writes ./operator_catalogue.pdf
+h4lat-catalogue                           # V, A, T with 1, 2 derivatives -> ./operator_catalogue_VAT_nder12.pdf
+h4lat-catalogue -X V --nder 1 2 3         # vector operators with up to 3 derivatives -> operator_catalogue_V_nder123.pdf
+h4lat-catalogue --keys V2 V3 A3 -j        # a selection, on all cores -> operator_catalogue_V2_V3_A3.pdf
+h4lat-catalogue -X V A T --nder 1 2 3 -j  # the whole bundled database
 h4lat-catalogue -o docs/ops.pdf --open    # custom path, open the PDF when done
 h4lat-catalogue --database my_operators   # catalogue of a custom operator database
 ```
 
+The operator IDs are those of the database, so a partial catalogue skips some of them; the
+sections always come in database order.  The default file name and title state the
+selection.  The command prints the selection and progress bars over the operators (`-q` to
+silence them).
+
 The command is installed with the package.  It needs `pylatex` (`pip install "h4lat[full]"`)
 and a LaTeX installation that provides `latexmk` or `pdflatex` (e.g. TeX Live).  See
-`h4lat-catalogue --help` for all options.  From Python, call `operator_show(show=False)`.
-If you have no LaTeX installation, the
-[`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) notebook shows the same
-content.  With a development install, run `pip install -e .` again after pulling this
-change so that the command is registered.
+`h4lat-catalogue --help` for all options.  From Python, call `operator_show`, which takes the
+same selection and returns the path of the PDF:
+
+```python
+from h4lat import operator_show
+
+operator_show(show=False)                                    # V, A, T with 1, 2 derivatives
+operator_show(X="V", nder=[1, 2, 3], show=False)             # vector operators, up to 3 derivatives
+operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # n_jobs=None: all cores
+```
+
+In a script, call it with `n_jobs > 1` under `if __name__ == "__main__":`, as usual with
+multiprocessing.  If you have no LaTeX installation, the
+[`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) notebook shows the operators
+with up to two derivatives.  With a development install, run `pip install -e .` again after
+pulling this change so that the command is registered.
+
+The kinematic factors are computed in exact arithmetic: the CG coefficients, computed in
+floating point, are first converted to the exact numbers they approximate (fractions such as
+⅓, or square roots of fractions such as 1/√2).  Until October 2026 they entered SymPy as
+floats, and some kinematic factors that vanish (operators 120, 340, 343, 557 and 560) were
+printed as tiny numbers of order 1e-16 instead of 0.
 
 ### Operators free of mixing
 

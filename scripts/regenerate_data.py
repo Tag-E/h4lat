@@ -379,7 +379,8 @@ def main(argv=None):
     log.info("done in %s", duration(time.time() - start))
     log.info("next: python -m pytest tests/test_cg_correctness.py, the full suite, then commit %s", data)
     if "operators" in args.stages or "all" in args.stages:
-        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue")
+        # The default catalogue holds only the operators with up to two derivatives.
+        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue -X V A T --nder 1 2 3 -j")
     return 0
 
 

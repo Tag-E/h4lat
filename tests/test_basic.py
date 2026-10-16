@@ -1,11 +1,21 @@
 """Basic tests for the h4lat package."""
 
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
+import sympy as sym
 
 import h4lat
 from h4lat import (
     OPERATOR_DATABASE,
+    Gamma_pol_list,
+    Operator_from_database,
     OperatorDict_from_database,
     OperatorList_from_database,
     cg_calc,
@@ -20,10 +30,13 @@ from h4lat import (
     latex_print_multiplicities,
     n_ele_h4,
     n_rep,
+    operator_show,
     rep_dim_list,
     rep_label_list,
 )
 from h4lat.cli import catalogue_main
+from h4lat.kinematic_data import E, I, mN, p1, p2, p3
+from h4lat.moments_operator import _catalogue_selection, _compute_kinematic_factors, _exact_number
 
 # ---------------------------------------------------------------------------
 # Group constants
@@ -228,27 +241,208 @@ def test_operator_show_in_public_api():
 def test_catalogue_defaults(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     kwargs = _run_catalogue(monkeypatch, [])
-    assert kwargs["doc_name"] == str(tmp_path / "operator_catalogue")
+    # Without -o, operator_show names the file after the selection, in the working directory.
+    assert kwargs["doc_name"] is None
     assert kwargs["operator_database"] is None
     assert kwargs["show"] is False
     assert kwargs["clean_tex"] is True
+    # Verbose (progress bars), the default selection (V, A, T with 1, 2 derivatives), serial.
+    assert kwargs["verbose"] is True
+    assert kwargs["X"] is None and kwargs["nder"] is None and kwargs["keys"] is None
+    assert kwargs["n_jobs"] == 1
 
 
 def test_catalogue_options(monkeypatch, tmp_path):
     output = tmp_path / "sub" / "dir" / "ops.pdf"
     kwargs = _run_catalogue(
-        monkeypatch, ["-o", str(output), "--database", OPERATOR_DATABASE, "--open", "--keep-tex", "-q"]
+        monkeypatch,
+        ["-o", str(output), "--database", OPERATOR_DATABASE, "--open", "--keep-tex", "-q"]
+        + ["-X", "V,A", "T", "--nder", "1", "3", "-j", "3"],
     )
     assert kwargs["doc_name"] == str(output.with_suffix(""))
     assert output.parent.is_dir()
     assert kwargs["operator_database"] == OPERATOR_DATABASE
     assert kwargs["show"] is True
     assert kwargs["clean_tex"] is False
+    assert kwargs["verbose"] is False
+    # Comma-separated and space-separated values are both accepted.
+    assert kwargs["X"] == ["V", "A", "T"]
+    assert kwargs["nder"] == [1, 3]
+    assert kwargs["keys"] is None
+    assert kwargs["n_jobs"] == 3
+
+
+def test_catalogue_keys_and_all_cores(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    kwargs = _run_catalogue(monkeypatch, ["--keys", "V2,V3", "A3", "-j"])
+    assert kwargs["keys"] == ["V2", "V3", "A3"]
+    assert kwargs["X"] is None and kwargs["nder"] is None
+    # -j without a number: all cores
+    assert kwargs["n_jobs"] == (os.cpu_count() or 1)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--keys", "V2", "-X", "A"],  # keys and X/nder are mutually exclusive
+        ["--keys", "V2", "--nder", "2"],
+        ["--nder", "x"],  # not an integer
+        ["-j", "-2"],  # negative number of processes
+    ],
+)
+def test_catalogue_invalid_options(argv):
+    with pytest.raises(SystemExit):
+        catalogue_main(argv)
 
 
 def test_catalogue_missing_database(tmp_path):
     with pytest.raises(SystemExit):
         catalogue_main(["--database", str(tmp_path / "missing")])
+
+
+# ---------------------------------------------------------------------------
+# operator_show — selection of the operators written to the catalogue
+# ---------------------------------------------------------------------------
+
+
+def test_catalogue_selection_default():
+    """By default: V, A and T with one and two derivatives."""
+    selection, title, name = _catalogue_selection()
+    assert selection == [("V", 1), ("V", 2), ("A", 1), ("A", 2), ("T", 1), ("T", 2)]
+    assert title == "Available Operators: X = V, A, T with 1, 2 derivatives"
+    assert name == "operator_catalogue_VAT_nder12"
+
+
+@pytest.mark.parametrize(
+    "kwargs, title, name",
+    [
+        (
+            dict(X="V", nder=[1, 2, 3]),
+            "Available Operators: X = V with 1, 2, 3 derivatives",
+            "operator_catalogue_V_nder123",
+        ),
+        (dict(X=["A"], nder=1), "Available Operators: X = A with 1 derivative", "operator_catalogue_A_nder1"),
+        (
+            dict(keys=["V2", "V3", "A3"]),
+            "Available Operators: V with 2, 3 derivatives; A with 3 derivatives",
+            "operator_catalogue_V2_V3_A3",
+        ),
+        # The same selection gets the same title and name, however it is written:
+        # keys in any order and case, or X and nder (with repetitions).
+        (
+            dict(keys="a2, v1 A1,V2"),
+            "Available Operators: X = V, A with 1, 2 derivatives",
+            "operator_catalogue_VA_nder12",
+        ),
+        (
+            dict(X="AV", nder=(2, 1, 2)),
+            "Available Operators: X = V, A with 1, 2 derivatives",
+            "operator_catalogue_VA_nder12",
+        ),
+    ],
+)
+def test_catalogue_selection_titles_and_names(kwargs, title, name):
+    assert _catalogue_selection(**kwargs)[1:] == (title, name)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(keys=["V2"], X="V"),  # keys cannot be combined with X / nder
+        dict(keys=["V2"], nder=2),
+        dict(keys=["Q2"]),  # unknown Dirac structure
+        dict(keys=["V0"]),  # at least one derivative
+        dict(keys=["V"]),  # no number of derivatives
+        dict(keys=[]),
+        dict(X="VZ"),
+        dict(X=""),
+        dict(nder=0),
+        dict(nder=[1, 2.5]),
+        dict(nder=True),
+    ],
+)
+def test_catalogue_selection_errors(kwargs):
+    with pytest.raises(ValueError):
+        _catalogue_selection(**kwargs)
+
+
+def _capture_catalogue(monkeypatch, tmp_path, **kwargs):
+    """Run operator_show without compiling: return the PDF path and the LaTeX source it would compile."""
+    pylatex = pytest.importorskip("pylatex")
+    sources = []
+    # Replace the LaTeX compilation by a recorder of the document source.
+    monkeypatch.setattr(pylatex.Document, "generate_pdf", lambda self, *args, **kw: sources.append(self.dumps()))
+    monkeypatch.chdir(tmp_path)
+    path = operator_show(show=False, verbose=False, **kwargs)
+    assert len(sources) == 1
+    return path, sources[0]
+
+
+def _catalogue_ids(tex):
+    """Operator IDs printed in a catalogue, in order of appearance."""
+    return [int(i) for i in re.findall(r"\\text\{Operator (\d+)\}", tex)]
+
+
+def test_operator_show_writes_only_the_selection(monkeypatch, tmp_path):
+    path, tex = _capture_catalogue(monkeypatch, tmp_path, keys=["V1"])
+    # The V operators with one derivative, with their database IDs.
+    assert path == Path("operator_catalogue_V_nder1.pdf")
+    assert _catalogue_ids(tex) == list(range(1, 17))
+    assert "Available Operators: X = V with 1 derivative" in tex
+    assert "X=V, n=2 (1 derivative)" in tex
+
+
+def test_operator_show_keeps_the_database_order(monkeypatch, tmp_path):
+    """Sections come in database order (increasing ID) whatever the order of the keys."""
+    _, tex = _capture_catalogue(monkeypatch, tmp_path, keys=["T1", "A1"])
+    assert _catalogue_ids(tex) == list(range(17, 57))  # A1: 17-32, T1: 33-56
+
+
+def test_operator_show_in_parallel_gives_the_same_catalogue(monkeypatch, tmp_path):
+    _, serial = _capture_catalogue(monkeypatch, tmp_path, keys=["V1"])
+    _, parallel = _capture_catalogue(monkeypatch, tmp_path, keys=["V1"], n_jobs=2)
+    assert parallel == serial
+
+
+def test_operator_show_missing_operators(monkeypatch, tmp_path):
+    # Groups missing from the database are left out with a warning ...
+    with pytest.warns(UserWarning, match="V4"):
+        _, tex = _capture_catalogue(monkeypatch, tmp_path, keys=["V1", "V4"])
+    assert _catalogue_ids(tex) == list(range(1, 17))
+    # ... and if nothing is left, it is an error.
+    with pytest.raises(ValueError, match="None of the selected operators"):
+        _capture_catalogue(monkeypatch, tmp_path, keys=["V4"])
+
+
+def test_operator_show_invalid_n_jobs():
+    pytest.importorskip("pylatex")
+    with pytest.raises(ValueError, match="n_jobs"):
+        operator_show(keys=["V1"], n_jobs=0, show=False, verbose=False)
+
+
+@pytest.mark.skipif(
+    shutil.which("latexmk") is None and shutil.which("pdflatex") is None, reason="needs a LaTeX installation"
+)
+def test_operator_show_compiles_a_small_catalogue(monkeypatch, tmp_path):
+    pytest.importorskip("pylatex")
+    monkeypatch.chdir(tmp_path)
+    path = operator_show(keys="V1", show=False, verbose=False)
+    assert path == Path("operator_catalogue_V_nder1.pdf")
+    assert (tmp_path / path).is_file()
+    # clean_tex=True (default): the LaTeX source is removed
+    assert not (tmp_path / "operator_catalogue_V_nder1.tex").exists()
+
+
+def test_parallel_kinematic_factors_match_the_serial_ones():
+    """K computed in worker processes equals K computed on access."""
+    ids = [2, 41, 120, 287]
+    serial = [Operator_from_database(i) for i in ids]
+    parallel = [Operator_from_database(i) for i in ids]
+    _compute_kinematic_factors(serial, n_jobs=1, verbose=False)
+    _compute_kinematic_factors(parallel, n_jobs=2, verbose=False)
+    for a, b in zip(serial, parallel):
+        assert a.K == b.K
+        assert a.latex_K == b.latex_K
 
 
 # ---------------------------------------------------------------------------
@@ -424,3 +618,93 @@ def test_operator_symbolic_attributes_are_computed_on_access():
 
     with pytest.raises(ValueError, match="gamma_pol_index"):
         type(op)(cgmat=op.cgmat, id=1, X=op.X, irrep=op.irrep, block=1, index_block=1, gamma_pol_index=6)
+
+
+# ---------------------------------------------------------------------------
+# Kinematic factor: exact arithmetic
+# ---------------------------------------------------------------------------
+
+
+def test_exact_number():
+    """Floating-point CG coefficients are mapped to the exact numbers they approximate."""
+    # noise of the numerical CG computation, as found in the bundled data
+    assert _exact_number(2.000000000000001) == 2
+    assert _exact_number(-2.999999999999989) == -3
+    assert _exact_number(1 / 3) == sym.Rational(1, 3)
+    # ±√(p/q), as in operators built with 1/np.sqrt(2)
+    assert _exact_number(1 / np.sqrt(2)) == sym.sqrt(2) / 2
+    assert _exact_number(-2 / np.sqrt(6)) == -sym.sqrt(6) / 3
+    assert _exact_number(0.0) == 0
+    # neither p/q nor ±√(p/q) with a small q: kept as a float
+    for x in (np.pi, 1 + np.sqrt(2), 0.1234567):
+        assert isinstance(_exact_number(float(x)), sym.Float)
+
+
+def test_polarisation_projectors_are_exact():
+    """No float in the projectors: a 0.5 would bring floating-point residues back into K."""
+    assert not any(entry.atoms(sym.Float) for projector in Gamma_pol_list for entry in projector)
+
+
+@pytest.mark.parametrize("operator_id", [120, 340, 343, 557, 560])
+def test_kinematic_factors_that_vanish_are_exactly_zero(operator_id):
+    """With the float CG coefficients these K came out as ~1e-16, e.g. -7105427357601 i p1 p2 p3 / (8·10²⁷ E)."""
+    op = Operator_from_database(operator_id)
+    assert op.K == 0
+    assert op.latex_K == "0"
+
+
+def test_known_kinematic_factors():
+    """K of a few operators (V with 1 and 3 derivatives, T with 1): the same as before exact arithmetic."""
+    expected = {
+        2: I * (-3 * mN**2 - 4 * p1**2 - 4 * p2**2 - 4 * p3**2) / E,
+        41: -3 * p2 * (E * mN + mN**2 + p1**2 + p2**2) / (2 * E * (E + mN)),
+        287: 2
+        * I
+        * (
+            -(mN**2) * p1**2
+            - mN**2 * p2**2
+            + 2 * mN**2 * p3**2
+            - p1**4
+            - 4 * p1**2 * p2**2
+            + 2 * p1**2 * p3**2
+            - p2**4
+            + 2 * p2**2 * p3**2
+            + 2 * p3**4
+        )
+        / E,
+    }
+    for operator_id, K in expected.items():
+        op = Operator_from_database(operator_id)
+        assert sym.simplify(op.K - K) == 0, f"operator {operator_id}"
+        assert not op.K.atoms(sym.Float)
+    # the operator expression is printed as before (only non-zero coefficients are summed)
+    assert (
+        Operator_from_database(41).latex_O == r"O^{T}_{1, 2, 2}-\frac{1}{2}O^{T}_{1, 3, 3}-\frac{1}{2}O^{T}_{1, 4, 4}"
+    )
+
+
+def test_latex_K_with_square_roots():
+    """Exact square roots in K (here 1/√2 · operator 14) are written as LaTeX roots."""
+    op = get_op_selection(1)[2]
+    assert op.K == sym.sqrt(2) * p1
+    assert op.latex_K == r"\sqrt{2}p_1"
+
+
+def test_latex_conversion_table():
+    """The float → LaTeX table is built on first use, and still reachable as numerics_to_latex_conv."""
+    # In a fresh interpreter, importing h4lat does not build the table (it takes a few seconds).
+    code = "import h4lat.kinematic_data as k; print(k.latex_conversion_table.cache_info().currsize)"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "0"
+
+    from h4lat import kinematic_data
+
+    table = kinematic_data.latex_conversion_table()
+    assert kinematic_data.numerics_to_latex_conv is table
+    assert len(table) == 2799010
+    assert table[1] == "" and table[3] == "3"
+    assert table[0.5] == r"\frac{1}{2}"
+    assert table[np.round(2 / 3, decimals=13)] == r"\frac{2}{3}"
+    assert table[1 / np.sqrt(2)] == r"\frac{1}{\sqrt{2}}"
+    # the first (num, den) giving a value wins: √2 = 2/√2 is written with den = 2
+    assert table[2 / np.sqrt(2)] == r"\frac{2}{\sqrt{2}}"

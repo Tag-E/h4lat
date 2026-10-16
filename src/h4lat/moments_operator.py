@@ -41,9 +41,16 @@ Reference:
 
 import functools
 import itertools as it
+import math
+import os
+import re
 import subprocess
 import sys
 import time
+import warnings
+from collections.abc import Iterable
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from fractions import Fraction
 from pathlib import Path
 from typing import Self
 
@@ -105,8 +112,8 @@ from .kinematic_data import (
     den_K_list,
     gamma5,
     gamma_mu,
+    latex_conversion_table,
     mN,
-    numerics_to_latex_conv,
     p1,
     p2,
     p3,
@@ -114,6 +121,20 @@ from .kinematic_data import (
     pslash,
 )
 from .utilities import all_equal, parity
+
+
+def _n_der(n: int, X: str) -> int:
+    """Number of derivatives of an operator with *n* Lorentz indices and Dirac structure *X*.
+
+    The Dirac structure takes 0 indices for S/P, 1 for V/A (γ_μ) and 2 for T (σ_{μν});
+    every other index belongs to a derivative.
+    """
+    if X in ('S', 'P'):
+        return n
+    if X == 'T':
+        return n - 2
+    return n - 1  # V, A
+
 
 ######################## Main Class #####################################
 
@@ -200,12 +221,7 @@ class Operator:
         # Number of Lorentz indices; number of derivatives depends on how many
         # indices the Dirac structure consumes: 0 for S/P, 1 for V/A, 2 for T.
         self.n = cgmat.ndim
-        if X in ('S', 'P'):
-            self.nder = self.n
-        elif X == 'T':
-            self.nder = self.n - 2
-        else:  # V, A
-            self.nder = self.n - 1
+        self.nder = _n_der(self.n, X)
 
         # The symbolic representations (O, K and what derives from them) are computed
         # on first access: see the cached properties below.
@@ -256,6 +272,9 @@ class Operator:
     def latex_K(self) -> str:
         """LaTeX string of the kinematic factor K."""
         latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
+        # K is exact, so square roots of the CG coefficients (e.g. 1/√2 in some
+        # get_op_selection operators) appear as sqrt(2): write them as \sqrt{2}.
+        latex_K = re.sub(r"sqrt\((\d+)\)", r"\\sqrt{\1}", latex_K)
         if '/' in latex_K:
             latex_K = "\\frac{" + latex_K.split('/')[0] + "}{ " + latex_K.split('/')[1] + "}"
         return latex_K
@@ -552,11 +571,71 @@ def symO_from_Cgmat(cgmat: np.ndarray) -> sym.core.add.Add:
     n = cgmat.ndim
     O = ArraySymbol("O", (5,) * n)
     operator_symbol = 0
-    for indices in it.product(range(4), repeat=n):
+    # Only the non-zero coefficients contribute: skipping the zeros gives the same
+    # expression, but is much faster for many indices (a T operator with three
+    # derivatives has 4⁵ = 1024 entries, almost all of them zero).
+    for indices in zip(*np.nonzero(cgmat)):
         # Shift indices to the 1-based (1,2,3,4) convention used in publications.
-        shifted_indices = [sum(x) for x in zip(indices, (1,) * n)]
+        shifted_indices = [int(i) + 1 for i in indices]
         operator_symbol += cgmat[indices] * O[shifted_indices]
     return operator_symbol
+
+
+@functools.lru_cache(maxsize=None)
+def _exact_number(x: float, max_denominator: int = 10**4, rtol: float = 1e-10) -> sym.Expr:
+    """Return the exact SymPy number that the float *x* approximates.
+
+    The CG coefficients are computed in floating point, so an entry that should be
+    exactly 2 can be stored as 2.000000000000001.  In a symbolic computation such
+    noise does not cancel: terms that should sum to zero leave a residue of order
+    1e-16, which SymPy then keeps (e.g. as the rational 7105427357601/8·10²⁷).
+    Converting every coefficient to the exact number it stands for removes it.
+
+    Two forms are tried, in order:
+
+    * a rational p/q with q ≤ *max_denominator* (all CG coefficients of the
+      bundled database are of this form: ¼, ⅓, ½, …, 6);
+    * ±√(p/q), found from x² (e.g. 1/√2 for operators built as
+      ``1/np.sqrt(2) * op``, as in ``get_op_selection``).
+
+    A candidate is accepted only if it agrees with *x* to the relative tolerance
+    *rtol* (the noise is ~1e-14, far below it).  If neither form fits, *x* is
+    returned as a ``sympy.Float``, i.e. the behaviour before this conversion.
+
+    Parameters
+    ----------
+    x : float
+        A coefficient of the cgmat (pass a Python float, so the cache can be used).
+    max_denominator : int, optional
+        Largest denominator q tried (default 10⁴).
+    rtol : float, optional
+        Relative tolerance for accepting a candidate (default 1e-10).
+
+    Returns
+    -------
+    sympy.Expr
+        ``sympy.Rational``, ±``sympy.sqrt(Rational)`` or, as a fallback, ``sympy.Float``.
+    """
+    if x == 0:
+        return sym.S.Zero
+    # Absolute tolerance: relative to |x|, but never below rtol itself.
+    tol = rtol * max(1.0, abs(x))
+
+    # 1) Rational p/q: the closest fraction with denominator ≤ max_denominator.
+    #    Two different fractions with denominators ≤ q_max differ by at least
+    #    1/q_max², so the noise cannot make it pick the wrong one.
+    r = Fraction(x).limit_denominator(max_denominator)
+    if abs(float(r) - x) <= tol:
+        return sym.Rational(r.numerator, r.denominator)
+
+    # 2) ±√(p/q): x² is then rational.  SymPy simplifies sqrt(Rational) itself,
+    #    e.g. sqrt(1/2) → √2/2.
+    r2 = Fraction(x * x).limit_denominator(max_denominator)
+    if abs(math.sqrt(r2) - abs(x)) <= tol:
+        return (1 if x > 0 else -1) * sym.sqrt(sym.Rational(r2.numerator, r2.denominator))
+
+    # 3) Neither form: keep the float, as before.
+    return sym.Float(x)
 
 
 def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
@@ -573,6 +652,10 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
     * S: Γ^S = 𝟙                (no Dirac index; all indices are derivatives)
     * P: Γ^P = γ₅               (no Dirac index; all indices are derivatives)
 
+    The coefficients are converted to the exact numbers they approximate (see
+    ``_exact_number``), so the matrix, and the kinematic factor computed from it,
+    is free of floating-point noise: terms that should cancel give exactly 0.
+
     Parameters
     ----------
     cgmat : ndarray, shape (4,)*n
@@ -585,9 +668,12 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
     """
     if X not in ['V', 'A', 'T', 'S', 'P']:
         raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
-    n = cgmat.ndim
-    op = np.zeros((4, 4))
-    for indices in it.product(range(4), repeat=n):
+    # Start from an exact SymPy zero matrix: the 0.0 entries of a NumPy array would
+    # turn every exact coefficient added to them back into a float.
+    op = sym.zeros(4, 4)
+    # Only the non-zero coefficients contribute (most of the 4ⁿ entries are zero).
+    for indices in zip(*np.nonzero(cgmat)):
+        indices = tuple(int(i) for i in indices)
         if X == 'V':
             gamma_prod = gamma_mu[indices[0]]
             start_ind = 1
@@ -610,7 +696,8 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
         p_prod = 1
         for ind in indices[start_ind:]:
             p_prod *= p_mu[ind]
-        op += cgmat[indices] * p_prod * gamma_prod
+        # Exact coefficient instead of the stored float (see _exact_number).
+        op += _exact_number(float(cgmat[indices])) * p_prod * gamma_prod
     return op
 
 
@@ -1374,6 +1461,8 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     """
     if X not in ['V', 'A', 'T', 'S', 'P']:
         raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
+    # The float → LaTeX lookup table, built on the first call (see kinematic_data).
+    numerics_to_latex_conv = latex_conversion_table()
     latex_str = ""
     monoms_list = list(sym.Add.make_args(operatorO))
     # Extract the concatenated index string from each monomial for sorting.
@@ -1593,24 +1682,207 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
 
 ################## PDF Catalogue ################
 
+# Dirac structures in the order in which make_operator_database writes them; also the
+# order in which they are listed in the default catalogue titles and file names.
+_X_ORDER = ('V', 'A', 'T', 'S', 'P')
+
+# Default selection of operator_show / h4lat-catalogue: V, A and T operators with one
+# and two derivatives (IDs 1-280 of the bundled database).  The operators with three
+# derivatives take most of the time, so they are written only on request.
+_CATALOGUE_DEFAULT_X = ('V', 'A', 'T')
+_CATALOGUE_DEFAULT_NDER = (1, 2)
+
+
+def _derivatives_text(nders: list[int]) -> str:
+    """'1 derivative', '3 derivatives', '1, 2 derivatives' (for catalogue titles)."""
+    return "1 derivative" if nders == [1] else f"{', '.join(str(d) for d in nders)} derivatives"
+
+
+def _catalogue_selection(
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+) -> tuple[list[tuple[str, int]], str, str]:
+    """Parse the operator selection of :func:`operator_show`.
+
+    The selection is either the product of the Dirac structures *X* and the numbers of
+    derivatives *nder* (each defaulting to ``('V', 'A', 'T')`` and ``(1, 2)``), or an
+    explicit list of *keys* such as ``['V2', 'V3', 'A3']``: a Dirac structure followed
+    by the number of derivatives.  Note that a key counts **derivatives**, not Lorentz
+    indices: ``'V2'`` is the vector operators with 2 derivatives, i.e. n = 3 indices.
+
+    Parameters
+    ----------
+    X : str or iterable of str, optional
+        Dirac structures among V, A, T, S, P.  Every letter counts, so ``'VA'``,
+        ``'V,A'`` and ``['V', 'A']`` are the same selection (case-insensitive).
+    nder : int or iterable of int, optional
+        Numbers of derivatives (each ≥ 1).
+    keys : str or iterable of str, optional
+        Keys ``'<X><nder>'``; a string may hold several, separated by commas or
+        spaces.  Cannot be combined with *X* or *nder*.
+
+    Returns
+    -------
+    selection : list of (X, nder)
+        The selected pairs without duplicates, in the order V, A, T, S, P and
+        increasing derivatives.
+    title : str
+        Default title of the catalogue, e.g.
+        ``'Available Operators: X = V, A, T with 1, 2 derivatives'`` or
+        ``'Available Operators: V with 2, 3 derivatives; A with 3 derivatives'``.
+    name : str
+        Default file name (without extension), e.g. ``'operator_catalogue_VAT_nder12'``
+        or ``'operator_catalogue_V2_V3_A3'``.
+
+    Raises
+    ------
+    ValueError
+        If *keys* is combined with *X* or *nder*, or a value is not valid.
+    """
+    if keys is not None and (X is not None or nder is not None):
+        raise ValueError("Select the operators either with keys or with X and nder, not both.")
+
+    if keys is not None:
+        # A single string may hold one key ("V2") or several ("V2,V3" or "V2 V3").
+        keys = [keys] if isinstance(keys, str) else list(keys)
+        tokens = [token for key in keys for token in re.split(r"[,\s]+", str(key).strip()) if token]
+        if not tokens:
+            raise ValueError("keys is empty: give at least one key such as 'V2'.")
+        pairs = []
+        for token in tokens:
+            match = re.fullmatch(r"([VATSP])(\d+)", token.upper())
+            if match is None or int(match.group(2)) < 1:
+                raise ValueError(
+                    f"Invalid key {token!r}: expected a Dirac structure (V, A, T, S or P) followed by "
+                    "the number of derivatives (at least 1), e.g. 'V2'."
+                )
+            pairs.append((match.group(1), int(match.group(2))))
+    else:
+        # Dirac structures: every letter of every item, ignoring commas and spaces.
+        X = _CATALOGUE_DEFAULT_X if X is None else X
+        letters = X if isinstance(X, str) else "".join(str(x) for x in X)
+        X_list = [c for c in letters.upper() if c not in ", "]
+        invalid = sorted({c for c in X_list if c not in _X_ORDER})
+        if invalid or not X_list:
+            raise ValueError(f"X must be made of V, A, T, S and P, got {X!r}.")
+
+        # Numbers of derivatives: positive integers (bool is excluded, although it is an int).
+        nder = _CATALOGUE_DEFAULT_NDER if nder is None else nder
+        nder_list = [nder] if isinstance(nder, (int, np.integer)) else list(nder)
+        if not nder_list or any(
+            isinstance(d, bool) or not isinstance(d, (int, np.integer)) or d < 1 for d in nder_list
+        ):
+            raise ValueError(f"nder must be a positive integer or a list of them, got {nder!r}.")
+
+        pairs = [(x, int(d)) for x in X_list for d in nder_list]
+
+    # Drop duplicates and sort: the same selection then gives the same title and file name
+    # however it was written (as keys or as X and nder, in any order).
+    selection = sorted(set(pairs), key=lambda pair: (_X_ORDER.index(pair[0]), pair[1]))
+    X_sel = list(dict.fromkeys(x for x, _ in selection))
+    nder_sel = sorted({d for _, d in selection})
+
+    if set(selection) == {(x, d) for x in X_sel for d in nder_sel}:
+        # The selection is a full product X × nder: name it by its structures and derivatives.
+        title = f"Available Operators: X = {', '.join(X_sel)} with {_derivatives_text(nder_sel)}"
+        name = f"operator_catalogue_{''.join(X_sel)}_nder{''.join(str(d) for d in nder_sel)}"
+    else:
+        # Otherwise list, for each structure, its numbers of derivatives (title) or the keys (name).
+        per_X = {x: [d for y, d in selection if y == x] for x in X_sel}
+        title = "Available Operators: " + "; ".join(f"{x} with {_derivatives_text(ds)}" for x, ds in per_X.items())
+        name = "operator_catalogue_" + "_".join(f"{x}{d}" for x, d in selection)
+
+    return selection, title, name
+
+
+def _kfactor_worker(cgmat: np.ndarray, X: str, gamma_pol_index: int) -> sym.Expr:
+    """Kinematic factor of one operator, computed in a worker process of operator_show.
+
+    The same computation as ``Operator.K``.  It is a module-level function so that the
+    worker processes can find it by name (a lambda or a bound method cannot be pickled).
+    """
+    return Kfactor_from_diracO(diracO_from_cgmat(cgmat, X), gamma_pol_index)
+
+
+def _compute_kinematic_factors(operators: list[Operator], n_jobs: int = 1, verbose: bool = True) -> None:
+    """Compute the kinematic factor K of every operator, with a progress bar.
+
+    ``Operator.K`` is a cached property, computed on first access; this function fills
+    that cache for all *operators* up front, which is the slow part of the catalogue
+    (SymPy).  Operators whose K is already cached are skipped.
+
+    Parameters
+    ----------
+    operators : list[Operator]
+    n_jobs : int, optional
+        Number of worker processes (default 1: compute in this process).  With
+        n_jobs > 1 the operators are spread over a ``ProcessPoolExecutor``, and each
+        result is stored in the operator's cache exactly as an access to ``op.K``
+        would have stored it.
+    verbose : bool, optional
+        Show the progress bar (default True).
+    """
+    # Operators whose K still has to be computed.  functools.cached_property keeps its
+    # value in the instance __dict__, under the name of the property.
+    todo = [op for op in operators if "K" not in op.__dict__]
+    progress = tqdm(
+        total=len(operators),
+        initial=len(operators) - len(todo),
+        desc="Kinematic factors",
+        unit="op",
+        disable=not verbose,
+    )
+    try:
+        if n_jobs == 1 or len(todo) < 2:
+            # Serial: in operator order, the postfix shows the group (e.g. V2) and the ID.
+            for op in todo:
+                progress.set_postfix_str(f"{op.X}{op.nder}, ID {op.id}", refresh=False)
+                _ = op.K  # computed on first access, then cached
+                progress.update()
+        else:
+            # Parallel: the results arrive in the order in which they finish.
+            with ProcessPoolExecutor(max_workers=min(n_jobs, len(todo))) as pool:
+                futures = {pool.submit(_kfactor_worker, op.cgmat, op.X, op.gamma_pol_index): op for op in todo}
+                for future in as_completed(futures):
+                    op = futures[future]
+                    # Fill the cache of the cached_property K, as op.K would have done.
+                    op.__dict__["K"] = future.result()
+                    progress.set_postfix_str(f"{op.X}{op.nder}, ID {op.id}", refresh=False)
+                    progress.update()
+    finally:
+        progress.close()
+
 
 def operator_show(
     operator_database: str | None = None,
     title: str | None = None,
     author: str = "E.T.",
     doc_name: str | None = None,
-    verbose: bool = False,
+    verbose: bool = True,
     show: bool = True,
     remove_pdf: bool = False,
     clean_tex: bool = True,
-) -> None:
-    """Produce a PDF catalogue of all operators in *operator_database* and,
-    optionally, open it on screen.
+    *,
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+    n_jobs: int | None = 1,
+) -> Path:
+    """Produce a PDF catalogue of a selection of the operators in *operator_database*
+    and, optionally, open it on screen.
 
     The catalogue is organised by Dirac structure *X* and index count *n*.
     Each section covers one (X, n) combination; each subsection covers one
     H(4) irrep / multiplicity block and lists every operator with its
     symbolic expression and kinematic factor.
+
+    By default only the V, A and T operators with one and two derivatives are
+    written; the operators with more derivatives take most of the time (computing
+    their kinematic factors with SymPy), so they are written only on request, with
+    *X* and *nder* or with *keys*.  Operator IDs are those of the database and never
+    change: a partial catalogue simply skips some of them.  Sections always come in
+    database order (increasing ID), whatever the order of the selection.
 
     The command ``h4lat-catalogue`` (installed with the package) calls this
     function from the shell; see ``h4lat-catalogue --help``.
@@ -1623,14 +1895,18 @@ def operator_show(
         shipped with the package is used.
     title : str, optional
         Title printed on the first page of the PDF.  Defaults to a string
-        reporting the maximum *n* found in the database.
+        stating the selected operators, e.g.
+        ``"Available Operators: X = V, A, T with 1, 2 derivatives"``.
     author : str, optional
         Author string printed on the title page (default ``"E.T."``).
     doc_name : str, optional
         Path (without extension) of the generated ``.tex`` / ``.pdf``
-        files; its folder must exist.  Defaults to ``"operator_catalogue"``.
+        files; its folder must exist.  Defaults to a name stating the selected
+        operators, in the working directory: ``"operator_catalogue_VAT_nder12"``
+        by default, ``"operator_catalogue_V2_V3_A3"`` for ``keys=["V2", "V3", "A3"]``.
     verbose : bool, optional
-        Print progress messages to stdout (default ``False``).
+        Print the selection, progress bars over the operators and progress
+        messages to stdout (default ``True``).
     show : bool, optional
         Open the PDF with ``xdg-open`` after generation (default ``True``).
     remove_pdf : bool, optional
@@ -1639,10 +1915,39 @@ def operator_show(
     clean_tex : bool, optional
         Remove the intermediate ``.tex`` and auxiliary LaTeX files after PDF
         generation (default ``True``).
+    X : str or iterable of str, optional (keyword only)
+        Dirac structures to include, among ``'V'``, ``'A'``, ``'T'``, ``'S'``,
+        ``'P'`` (default ``('V', 'A', 'T')``; ``'VA'`` is the same as ``['V', 'A']``).
+    nder : int or iterable of int, optional (keyword only)
+        Numbers of derivatives to include (default ``(1, 2)``).  The catalogue
+        holds every combination of *X* and *nder*.
+    keys : str or iterable of str, optional (keyword only)
+        Explicit groups ``'<X><number of derivatives>'``, e.g. ``["V2", "V3", "A3"]``
+        (a key counts derivatives, not indices: ``'V2'`` has n = 3).  Cannot be
+        combined with *X* or *nder*.
+    n_jobs : int or None, optional (keyword only)
+        Number of processes computing the kinematic factors (default 1, in this
+        process; ``None`` uses all CPU cores).  The result does not depend on it.
+        In a script, call ``operator_show`` with ``n_jobs > 1`` under
+        ``if __name__ == "__main__":``, as usual with multiprocessing.
 
     Returns
     -------
-    None
+    pathlib.Path
+        Path of the PDF file (already deleted if *remove_pdf* is True).
+
+    Raises
+    ------
+    ValueError
+        If the selection is invalid or none of the selected operators is in the
+        database.  Selected groups missing from the database (e.g. ``'V4'``) are
+        only reported with a warning.
+
+    Examples
+    --------
+    >>> operator_show(show=False)                                # V, A, T with 1, 2 derivatives
+    >>> operator_show(X="V", nder=[1, 2, 3], show=False)         # vector operators, up to 3 derivatives
+    >>> operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # a selection, on all cores
     """
 
     # pylatex is an optional dependency; raise a helpful error if missing
@@ -1651,23 +1956,59 @@ def operator_show(
             "pylatex is required for operator_show(). "
             "Install it with: pip install pylatex"
         )
+    start = time.time()
+
+    # The selected (X, number of derivatives) groups, and the default title / file name
+    # that describe them.  This also validates X, nder and keys.
+    selection, default_title, default_name = _catalogue_selection(X=X, nder=nder, keys=keys)
+    if title is None:
+        title = default_title
+    if doc_name is None:
+        doc_name = default_name
+
+    # Number of processes for the kinematic factors: None means all CPU cores.
+    if n_jobs is None:
+        n_jobs = os.cpu_count() or 1
+    if isinstance(n_jobs, bool) or not isinstance(n_jobs, (int, np.integer)) or n_jobs < 1:
+        raise ValueError(f"n_jobs must be a positive integer or None, got {n_jobs!r}.")
 
     # Build the nested operators dict from the chosen (or default) database.
     # OperatorDict_from_database falls back to _BUNDLED_OPERATOR_DATABASE when
     # operator_database is None, so no special-casing is needed here.
     operators_dict = OperatorDict_from_database(operator_database)
 
-    # Derive the default title from the highest n found in the database
-    if title is None:
-        max_n_der = max(n-1 if X!='T' else n-2 for n, X in operators_dict.keys())
-        title = f"Available Operators (with up to {max_n_der} derivatives)"
-
-    # Set the default document / file base name
-    if doc_name is None:
-        doc_name = "operator_catalogue"
+    # The (n, X) groups of the database that belong to the selection.  The dict is filled
+    # in order of increasing operator ID, so the sections keep the database order.
+    selected = set(selection)
+    sections = [(n, x) for n, x in operators_dict if (x, _n_der(n, x)) in selected]
+    available = [f"{x}{_n_der(n, x)}" for n, x in operators_dict]
+    if not sections:
+        raise ValueError(
+            f"None of the selected operators ({', '.join(f'{x}{d}' for x, d in selection)}) is in the "
+            f"operator database, which holds: {', '.join(available)}."
+        )
+    # Selected groups that the database does not hold are reported, not fatal.
+    missing = [f"{x}{d}" for x, d in selection if f"{x}{d}" not in available]
+    if missing:
+        warnings.warn(f"Not in the operator database, left out of the catalogue: {', '.join(missing)}.", stacklevel=2)
 
     # The PDF file that will be produced on disk
     file_name = f"{doc_name}.pdf"
+
+    # All the operators that will be printed, in catalogue order.
+    operators = [op for key in sections for block in operators_dict[key].values() for op in block]
+
+    if verbose:
+        groups = ", ".join(f"{x}{_n_der(n, x)}" for n, x in sections)
+        print(f"Operator catalogue: {groups} ({len(operators)} operators) -> {file_name}")
+        if n_jobs > 1:
+            print(f"Computing the kinematic factors on {n_jobs} processes")
+
+    # --- 1. Kinematic factors: the slow part (SymPy), done for all operators up front ---
+
+    _compute_kinematic_factors(operators, n_jobs=n_jobs, verbose=verbose)
+
+    # --- 2. LaTeX document ---
 
     # Instantiate the LaTeX document
     doc = Document(
@@ -1686,20 +2027,25 @@ def operator_show(
     # Use a smaller font so that long operator expressions fit on one line
     doc.append(Command('fontsize', arguments=['8', '12']))
 
-    # Loop over all (n, X) keys to build one LaTeX section per combination
-    for n, X in operators_dict.keys():
+    # Second progress bar: writing the rows (the operator expressions are built here;
+    # the first one also builds the float → LaTeX lookup table, a few seconds).
+    progress = tqdm(total=len(operators), desc="LaTeX rows", unit="op", disable=not verbose)
 
-        # Section title shows the shared Dirac structure and index count
-        section = Section(f"X={X}, n={n}", numbering=False)
+    # Loop over the selected (n, x) groups (x: Dirac structure) to build one LaTeX section per group
+    for n, x in sections:
 
-        # Loop over the irrep / multiplicity-block sub-keys within this (n, X)
-        for irrep, imul in operators_dict[(n, X)].keys():
+        # Section title shows the shared Dirac structure, index count and number of derivatives
+        n_der = _n_der(n, x)
+        section = Section(f"X={x}, n={n} ({n_der} derivative{'s' if n_der != 1 else ''})", numbering=False)
+
+        # Loop over the irrep / multiplicity-block sub-keys within this (n, x)
+        for irrep, imul in operators_dict[(n, x)].keys():
 
             # Collect per-operator properties to determine the block-wide value
             # (or flag it as 'mixed' when operators in the block disagree)
-            C_list    = [op.C    for op in operators_dict[(n, X)][(irrep, imul)]]
-            tr_list   = [op.tr   for op in operators_dict[(n, X)][(irrep, imul)]]
-            symm_list = [op.symm for op in operators_dict[(n, X)][(irrep, imul)]]
+            C_list    = [op.C    for op in operators_dict[(n, x)][(irrep, imul)]]
+            tr_list   = [op.tr   for op in operators_dict[(n, x)][(irrep, imul)]]
+            symm_list = [op.symm for op in operators_dict[(n, x)][(irrep, imul)]]
 
             # If every operator shares the same value use it; otherwise mark 'mixed'
             C    = C_list[0]    if all_equal(C_list)    else 'mixed'
@@ -1716,7 +2062,7 @@ def operator_show(
             agn = Alignat(numbering=False, escape=False)
 
             # Append each operator in the block to the math environment
-            for op in operators_dict[(n, X)][(irrep, imul)]:
+            for op in operators_dict[(n, x)][(irrep, imul)]:
 
                 # Label row: the operator's integer id
                 agn.append(r"\text{Operator " + str(op.id) + r"}&\\")
@@ -1726,7 +2072,7 @@ def operator_show(
                     r"\!"*20
                     + r" O_{}^{} &= {} \\".format(
                         op.index_block,
-                        '{' + f"{X}{irrep},{imul}" + '}',
+                        '{' + f"{x}{irrep},{imul}" + '}',
                         op,
                     )
                 )
@@ -1736,10 +2082,11 @@ def operator_show(
                     r"\!"*20
                     + r" K_{}^{} &= {} \\\\\\".format(
                         op.index_block,
-                        '{' + f"{X}{irrep},{imul}" + '}',
+                        '{' + f"{x}{irrep},{imul}" + '}',
                         op.latex_K,
                     )
                 )
+                progress.update()
 
             # Attach the math block to the subsection, then the subsection to the section
             subsection.append(agn)
@@ -1749,16 +2096,15 @@ def operator_show(
         doc.append(section)
         doc.append(NoEscape(r"\newpage"))
 
-    # --- PDF generation ---
+    progress.close()
+
+    # --- 3. PDF generation ---
 
     if verbose:
-        print("\nGenerating the operators catalogue ...\n")
+        print(f"Compiling {doc_name}.tex with LaTeX ...")
 
     # Compile the LaTeX source; clean_tex controls removal of auxiliary files
     doc.generate_pdf(doc_name, clean_tex=clean_tex)
-
-    if verbose:
-        print("\nOperators catalogue generated\n")
 
     # --- Optional on-screen display ---
 
@@ -1768,7 +2114,7 @@ def operator_show(
         # Brief pause so the viewer has time to render before a potential deletion
         time.sleep(1.5)
         if verbose:
-            print("\nOperators catalogue shown\n")
+            print("Operator catalogue shown")
 
     # --- Optional cleanup ---
 
@@ -1776,9 +2122,11 @@ def operator_show(
         # Delete the PDF from disk
         Path(file_name).unlink()
         if verbose:
-            print("\nOperators catalogue removed from the device\n")
+            print("Operator catalogue removed from the device")
     elif verbose:
-        print(f"\nOperators catalogue available in {file_name}\n")
+        print(f"Operator catalogue written to {file_name} in {time.time() - start:.0f} s")
+
+    return Path(file_name)
 
 
 ################## HDF5 I/O #####################
