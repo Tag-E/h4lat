@@ -16,7 +16,7 @@
   - [Constructing lattice operators](#constructing-lattice-operators)
   - [Loading operators from the bundled database](#loading-operators-from-the-bundled-database)
   - [Operator catalogue (PDF)](#operator-catalogue-pdf)
-  - [Operators free of mixing](#operators-free-of-mixing)
+  - [Operators used in the literature](#operators-used-in-the-literature)
   - [Building an operator database](#building-an-operator-database)
   - [Saving and reloading operators (HDF5)](#saving-and-reloading-operators-hdf5)
 - [Module overview](#module-overview)
@@ -108,7 +108,7 @@ Jupyter notebooks with worked examples are provided in the [`examples/`](example
 | [`quickstart.ipynb`](examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
 | [`operator_algebra.ipynb`](examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
 | [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Listing of every operator with up to two derivatives in the bundled database (IDs 1–280), organised by Dirac structure, number of indices, and H(4) irrep |
-| [`operators_mixing_free.ipynb`](examples/operators_mixing_free.ipynb) | Operators free of mixing with lower or equal dimensional operators, for 1 derivative ([arXiv:2401.05360](https://arxiv.org/abs/2401.05360)), 2 derivatives ([arXiv:2605.02808](https://arxiv.org/abs/2605.02808)), and 3 derivatives (work in preparation) |
+| [`paper_operators.ipynb`](examples/paper_operators.ipynb) | Operators used in published works, selected with `get_paper_operators` by INSPIRE texkey or DOI, and the code that builds them from the operators of the bundled database |
 
 A Google Colab notebook with some minimal working examples can be found [here](https://colab.research.google.com/drive/1KFnE0hi4XDNyo2Kg8iDKSSEqY1YQkPGZ?usp=sharing).
 
@@ -320,28 +320,37 @@ floating point, are first converted to the exact numbers they approximate (fract
 floats, and some kinematic factors that vanish (operators 120, 340, 343, 557 and 560) were
 printed as tiny numbers of order 1e-16 instead of 0.
 
-### Operators free of mixing
+### Operators used in the literature
 
-`get_op_selection(n_der)` returns the curated set of H(4)-irreducible operators
-that are free of mixing with lower or equal dimensional operators, for a given
-number of derivatives.  These are the operators used in previous works:
+`get_paper_operators` returns the H(4)-irreducible operators used in published works.
+Select the paper by its INSPIRE texkey or by its DOI.  Each operator's `id` is its label:
 
 ```python
-from h4lat import get_op_selection
+from h4lat import AVAILABLE_PAPERS, get_paper_operators
 
-# 1 derivative: 3 vector + 2 axial + 4 tensor operators
-ops1 = get_op_selection(n_der=1)
+print(AVAILABLE_PAPERS)                                       # INSPIRE texkey -> DOI
 
-# 2 derivatives: 4 vector + 4 axial + 9 tensor operators
-ops2 = get_op_selection(n_der=2)
+ops = get_paper_operators("Rodekamp:2023wpe")                 # by INSPIRE texkey
+ops = get_paper_operators(doi="10.1103/PhysRevD.109.074508")  # by DOI: the same operators
 
-# 3 derivatives: 1 vector + 1 axial + 4 tensor operators
-ops3 = get_op_selection(n_der=3)
-
-for op in ops1:
+for op in ops:
     print(f"id={op.id}  X={op.X}  irrep={op.irrep}  C={op.C}")
     op.display()   # renders LaTeX in a Jupyter notebook
 ```
+
+| INSPIRE texkey | Reference | Operators |
+|----------------|-----------|-----------|
+| `Burger:2021knd` | S. Bürger et al., [Phys. Rev. D 105, 054504 (2022)](https://doi.org/10.1103/PhysRevD.105.054504), [arXiv:2111.08306](https://arxiv.org/abs/2111.08306) | a₂: axial, irrep (4,3), 2 derivatives; d₂: axial, irrep (8,1), 2 derivatives, and tensor, irrep (8,1), 1 derivative |
+| `Rodekamp:2023wpe` | M. Rodekamp et al., [Phys. Rev. D 109, 074508 (2024)](https://doi.org/10.1103/PhysRevD.109.074508), [arXiv:2401.05360](https://arxiv.org/abs/2401.05360) | 1 derivative: vector, irreps (3,1) and (6,3); axial, irrep (6,4); tensor, irreps (8,1) and (8,2) |
+| `Taggi:2026skn` | E. Taggi et al., [Phys. Rev. D 114, 074507 (2026)](https://doi.org/10.1103/kknt-zxsw), [arXiv:2605.02808](https://arxiv.org/abs/2605.02808) | 2 derivatives: vector, irrep (4,2); axial, irrep (4,3); tensor, irreps (3,2), (3,3) and (6,2) |
+| `Alexandrou:2026tjs` | C. Alexandrou et al., [arXiv:2607.03458](https://doi.org/10.48550/arXiv.2607.03458) (2026) | vector: 2 derivatives, irrep (4,2); 3 derivatives, irreps (1,2) and (6,2) |
+
+Each operator is a linear combination of operators of the bundled database
+(`Operator_from_database(id)`), built with the operator arithmetic of
+[`operator_algebra.ipynb`](examples/operator_algebra.ipynb).  The notebook
+[`paper_operators.ipynb`](examples/paper_operators.ipynb) shows the code that builds the
+operators of each paper.  Combining the catalogue operators differently gives the operator
+basis of other works.
 
 ### Building an operator database
 
@@ -363,12 +372,12 @@ needed to reconstruct each operator exactly — including `gamma_pol_index`, so 
 custom polarisation matrix set via `set_polarization_matrix()` survives the
 round trip.  This is a lighter-weight alternative to `make_operator_database`
 for saving an ad-hoc selection of operators (e.g. the output of
-`get_op_selection`, or operators built by hand) rather than a full database:
+`get_paper_operators`, or operators built by hand) rather than a full database:
 
 ```python
-from h4lat import get_op_selection, operator_list_to_h5, h5_to_operator_list
+from h4lat import get_paper_operators, operator_list_to_h5, h5_to_operator_list
 
-ops = get_op_selection(n_der=1)          # any list of Operator objects
+ops = get_paper_operators("Rodekamp:2023wpe")  # any list of Operator objects
 operator_list_to_h5(ops, "my_operators/selection.h5")
 
 # ... later, possibly in a different session ...

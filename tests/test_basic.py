@@ -1,6 +1,8 @@
 """Basic tests for the h4lat package."""
 
+import inspect
 import itertools as it
+import json
 import os
 import re
 import shutil
@@ -14,6 +16,7 @@ import sympy as sym
 
 import h4lat
 from h4lat import (
+    AVAILABLE_PAPERS,
     OPERATOR_DATABASE,
     Gamma_pol_list,
     Operator_from_database,
@@ -26,6 +29,7 @@ from h4lat import (
     get_op_selection,
     get_OperatorDict,
     get_OperatorList,
+    get_paper_operators,
     irrep_dim,
     irrep_index,
     latex_print_multiplicities,
@@ -546,6 +550,109 @@ def test_op_selection_three_derivatives():
         assert sym.simplify(op.K) != 0, f"operator {op.id}"
     assert trace_symm((opT1 - opT1p).cgmat, "T") == "= 0"
     assert trace_symm((opT2 - opT2p).cgmat, "T") == "= 0"
+
+
+# ---------------------------------------------------------------------------
+# get_paper_operators — operators used in published works
+# ---------------------------------------------------------------------------
+
+
+def test_paper_operators_labels():
+    """Every paper returns its operators with their labels as id."""
+    expected = {
+        "Burger:2021knd": ["O^5_{234}", "O^5_{134}", "O^5_{124}", "O^5_{123}"]
+        + [f"O^{i}_1" for i in range(1, 9)]
+        + [f"O^{i}_2" for i in range(1, 9)],
+        "Rodekamp:2023wpe": ["V1", "V2", "V3", "A1", "A2", "T1", "T2", "T3", "T4"],
+        "Taggi:2026skn": ["V1", "V2", "V3", "V4", "A1", "A2", "A3", "A4"] + [f"T{i}" for i in range(1, 10)],
+        "Alexandrou:2026tjs": ["{2,3,4}", "{1,3,4}", "{1,2,4}", "{1,2,3}", "{1,2,3,4}"]
+        + ["{4,4,2,3} - {1,1,2,3}", "{4,4,1,3} - {2,2,1,3}", "{4,4,1,2} - {3,3,1,2}"],
+    }
+    assert list(expected) == list(AVAILABLE_PAPERS)
+    for paper, ids in expected.items():
+        assert [op.id for op in get_paper_operators(paper)] == ids, paper
+
+
+def test_paper_operators_irreps():
+    """Dirac structure, number of indices and irrep of every operator; all have a definite C-parity."""
+    expected = {
+        "Burger:2021knd": [("A", 3, (4, 3))] * 4 + [("A", 3, (8, 1))] * 8 + [("T", 3, (8, 1))] * 8,
+        "Rodekamp:2023wpe": [("V", 2, (3, 1))] * 2
+        + [("V", 2, (6, 3))]
+        + [("A", 2, (6, 4))] * 2
+        + [("T", 3, (8, 1))] * 2
+        + [("T", 3, (8, 2))] * 2,
+        "Taggi:2026skn": [("V", 3, (4, 2))] * 4
+        + [("A", 3, (4, 3))] * 4
+        + [("T", 4, (3, 2))]
+        + [("T", 4, (3, 3))] * 2
+        + [("T", 4, (6, 2))] * 6,
+        "Alexandrou:2026tjs": [("V", 3, (4, 2))] * 4 + [("V", 4, (1, 2))] + [("V", 4, (6, 2))] * 3,
+    }
+    for paper, structure in expected.items():
+        ops = get_paper_operators(paper)
+        assert [(op.X, op.n, op.irrep) for op in ops] == structure, paper
+        assert all(op.C in (1, -1) for op in ops), paper
+
+
+def test_paper_operators_selection():
+    """A paper is selected by texkey, by DOI (with or without prefix, in any case) or by both."""
+    key, doi = "Taggi:2026skn", "10.1103/kknt-zxsw"
+    reference = [op.cgmat for op in get_paper_operators(paper=key)]
+    for selection in (
+        dict(doi=doi),
+        dict(doi=f"https://doi.org/{doi}"),
+        dict(doi=f"doi:{doi.upper()}"),
+        dict(paper=key, doi=f"http://dx.doi.org/{doi}"),
+    ):
+        ops = get_paper_operators(**selection)
+        assert len(ops) == len(reference), selection
+        assert all(np.array_equal(op.cgmat, cgmat) for op, cgmat in zip(ops, reference)), selection
+    with pytest.raises(ValueError, match="INSPIRE texkey"):
+        get_paper_operators()
+    with pytest.raises(ValueError, match="paper 'Nobody:2000abc'"):
+        get_paper_operators("Nobody:2000abc")
+    with pytest.raises(ValueError, match="DOI '10.1103/none'"):
+        get_paper_operators(doi="10.1103/none")
+    with pytest.raises(ValueError, match="different papers"):
+        get_paper_operators(paper="Rodekamp:2023wpe", doi=doi)
+
+
+def test_paper_operators_explicit():
+    """Two operators written out: a sum over (6,2) blocks of Alexandrou et al. and a tensor of Bürger et al."""
+    # {4,4,2,3} - {1,1,2,3}: every ordering of the indices, completely symmetric and traceless
+    expected = np.zeros((4, 4, 4, 4))
+    for indices in set(it.permutations((3, 3, 1, 2))):
+        expected[indices] += 1
+    for indices in set(it.permutations((0, 0, 1, 2))):
+        expected[indices] -= 1
+    op = get_paper_operators("Alexandrou:2026tjs")[5]
+    assert np.allclose(op.cgmat, expected)
+    assert (op.irrep, op.block, op.symm, op.tr) == ((6, 2), None, "Symmetric", "= 0")
+    # O^1_2 = (σ_31 D_1 - σ_34 D_4) / (2√2); the cgmat holds σ_μν with μ < ν only
+    expected = np.zeros((4, 4, 4))
+    expected[0, 2, 0] = expected[2, 3, 3] = -1 / (2 * np.sqrt(2))
+    assert np.allclose(get_paper_operators("Burger:2021knd")[12].cgmat, expected)
+
+
+def test_paper_operators_notebook_code():
+    """The code shown in examples/paper_operators.ipynb is that of get_paper_operators."""
+    notebook = Path(__file__).parents[1] / "examples" / "paper_operators.ipynb"
+    if not notebook.is_file():
+        pytest.skip("the example notebooks are not available")
+    source = [line.strip() for line in inspect.getsource(get_paper_operators).splitlines() if line.strip()]
+    cells = json.loads(notebook.read_text(encoding="utf-8"))["cells"]
+    markdown = ["".join(cell["source"]) for cell in cells if cell["cell_type"] == "markdown"]
+    blocks = [block for text in markdown for block in re.findall(r"```python\n(.*?)```", text, re.DOTALL)]
+    assert len(blocks) == len(AVAILABLE_PAPERS)
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        assert any(source[i : i + len(lines)] == lines for i in range(len(source))), lines[0]
+
+
+def test_get_paper_operators_in_public_api():
+    """get_paper_operators and AVAILABLE_PAPERS must appear in h4lat.__all__."""
+    assert {"get_paper_operators", "AVAILABLE_PAPERS"} <= set(h4lat.__all__)
 
 
 def test_get_OperatorList_in_public_api():

@@ -274,7 +274,7 @@ class Operator:
         """LaTeX string of the kinematic factor K."""
         latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
         # K is exact, so square roots of the CG coefficients (e.g. 1/√2 in some
-        # get_op_selection operators) appear as sqrt(2): write them as \sqrt{2}.
+        # get_paper_operators operators) appear as sqrt(2): write them as \sqrt{2}.
         latex_K = re.sub(r"sqrt\((\d+)\)", r"\\sqrt{\1}", latex_K)
         if '/' in latex_K:
             latex_K = "\\frac{" + latex_K.split('/')[0] + "}{ " + latex_K.split('/')[1] + "}"
@@ -597,7 +597,7 @@ def _exact_number(x: float, max_denominator: int = 10**4, rtol: float = 1e-10) -
     * a rational p/q with q ≤ *max_denominator* (all CG coefficients of the
       bundled database are of this form: ¼, ⅓, ½, …, 6);
     * ±√(p/q), found from x² (e.g. 1/√2 for operators built as
-      ``1/np.sqrt(2) * op``, as in ``get_op_selection``).
+      ``1/np.sqrt(2) * op``, as in ``get_paper_operators``).
 
     A candidate is accepted only if it agrees with *x* to the relative tolerance
     *rtol* (the noise is ~1e-14, far below it).  If neither form fits, *x* is
@@ -1468,6 +1468,270 @@ def get_op_selection(n_der: int) -> list[Operator]:
         return [opV, opA, opT1, opT2, opT1p, opT2p]
 
     raise ValueError(f"n_der must be 1, 2, or 3, got {n_der}.")
+
+
+# Papers whose operators are returned by get_paper_operators: INSPIRE texkey -> DOI.
+AVAILABLE_PAPERS = {
+    "Burger:2021knd": "10.1103/PhysRevD.105.054504",
+    "Rodekamp:2023wpe": "10.1103/PhysRevD.109.074508",
+    "Taggi:2026skn": "10.1103/kknt-zxsw",
+    "Alexandrou:2026tjs": "10.48550/arXiv.2607.03458",
+}
+
+
+def _normalise_doi(doi: str) -> str:
+    """Return *doi* without its resolver prefix (``https://doi.org/``, ``doi:``, …), in lower case.
+
+    DOIs are case-insensitive, so ``"10.1103/PhysRevD.109.074508"``,
+    ``"https://doi.org/10.1103/physrevd.109.074508"`` and ``"doi:10.1103/PhysRevD.109.074508"``
+    all give the same string.
+    """
+    return re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", doi.strip(), flags=re.IGNORECASE).lower()
+
+
+def get_paper_operators(paper: str | None = None, doi: str | None = None) -> list[Operator]:
+    """Return the operators used in a published lattice QCD work.
+
+    The paper is selected by its INSPIRE texkey (*paper*) or by its DOI (*doi*); if both are
+    given, they must refer to the same paper.  Each operator is a linear combination of
+    operators of the bundled database (``Operator_from_database``), and its ``id`` is set to
+    the label of the operator.
+
+    The available papers (``AVAILABLE_PAPERS`` maps each texkey to its DOI) are:
+
+    * ``"Burger:2021knd"`` — S. Bürger et al., Phys. Rev. D 105, 054504 (2022), arXiv:2111.08306.
+      a₂: axial, irrep (4,3), 2 derivatives.  d₂: axial, irrep (8,1), 2 derivatives, and
+      tensor, irrep (8,1), 1 derivative.
+    * ``"Rodekamp:2023wpe"`` — M. Rodekamp et al., Phys. Rev. D 109, 074508 (2024), arXiv:2401.05360.
+      1 derivative: vector, irreps (3,1) and (6,3); axial, irrep (6,4); tensor, irreps (8,1) and (8,2).
+    * ``"Taggi:2026skn"`` — E. Taggi et al., Phys. Rev. D 114, 074507 (2026), arXiv:2605.02808.
+      2 derivatives: vector, irrep (4,2); axial, irrep (4,3); tensor, irreps (3,2), (3,3) and (6,2).
+    * ``"Alexandrou:2026tjs"`` — C. Alexandrou et al., arXiv:2607.03458 (2026).
+      Vector: 2 derivatives, irrep (4,2); 3 derivatives, irreps (1,2) and (6,2).
+
+    Parameters
+    ----------
+    paper : str, optional
+        INSPIRE texkey of the paper, e.g. ``"Rodekamp:2023wpe"``.
+    doi : str, optional
+        DOI of the paper, with or without a resolver prefix: ``"10.1103/PhysRevD.109.074508"``,
+        ``"https://doi.org/10.1103/PhysRevD.109.074508"`` and ``"doi:10.1103/PhysRevD.109.074508"``
+        are all accepted.
+
+    Returns
+    -------
+    list[Operator]
+        The operators used in the paper, each with ``id`` set to its label
+        (e.g. ``"V1"``, ``"O^5_{234}"`` or ``"{1,2,3,4}"``).
+
+    Raises
+    ------
+    ValueError
+        If neither *paper* nor *doi* is given, if either is not in ``AVAILABLE_PAPERS``,
+        or if they refer to different papers.
+
+    Notes
+    -----
+    The operators are built with the operator arithmetic (``+``, ``-`` and multiplication by a
+    number) from the operators of the bundled database, whose IDs are those of the operator
+    catalogue.  Combining the catalogue operators differently gives the operator basis of
+    other works.
+
+    Examples
+    --------
+    >>> ops = get_paper_operators("Rodekamp:2023wpe")
+    >>> [op.id for op in ops]
+    ['V1', 'V2', 'V3', 'A1', 'A2', 'T1', 'T2', 'T3', 'T4']
+    >>> ops = get_paper_operators(doi="10.1103/PhysRevD.109.074508")  # the same operators
+    """
+    available = ", ".join(AVAILABLE_PAPERS)
+    if paper is None and doi is None:
+        raise ValueError(f"Give the INSPIRE texkey (paper) or the DOI (doi) of one of the papers: {available}.")
+    if paper is not None and paper not in AVAILABLE_PAPERS:
+        raise ValueError(f"No operators are available for paper {paper!r}; the available papers are: {available}.")
+    if doi is not None:
+        paper_of_doi = {_normalise_doi(d): key for key, d in AVAILABLE_PAPERS.items()}.get(_normalise_doi(doi))
+        if paper_of_doi is None:
+            raise ValueError(
+                f"No operators are available for DOI {doi!r}; the available DOIs are: "
+                f"{', '.join(AVAILABLE_PAPERS.values())}."
+            )
+        if paper is not None and paper != paper_of_doi:
+            raise ValueError(
+                f"paper={paper!r} and doi={doi!r} refer to different papers (the DOI is that of {paper_of_doi!r})."
+            )
+        paper = paper_of_doi
+
+    # The comments give the index structure of each operator, up to its normalisation.  The first
+    # index is that of γ_μ for V and A, the first two are those of σ_{μν} for T, and the others are
+    # those of the derivatives; {...} is the symmetric combination of the indices in it.
+
+    if paper == "Burger:2021knd":
+        # a2: Axial - irrep (4,3)
+        op1 = Operator_from_database(125)  # = {2,3,4}
+        op2 = Operator_from_database(126)  # = {1,3,4}
+        op3 = Operator_from_database(127)  # = {1,2,4}
+        op4 = Operator_from_database(128)  # = {1,2,3}
+
+        # d2: Axial - irrep (8,1)
+        op5 = 1/(4 * np.sqrt(3)) * (1/2 * Operator_from_database(151) - 3/2 * Operator_from_database(147))  # = 2x 2,{1,4} - 1,{2,4} - 4,{1,2}
+        op6 = 1/(4 * np.sqrt(3)) * (1/2 * Operator_from_database(152) + 3/2 * Operator_from_database(148))  # = 2x 2,{1,3} - 1,{2,3} - 3,{1,2}
+        op7 = 1/(4 * np.sqrt(3)) * (Operator_from_database(150) - 3/2 * Operator_from_database(146))        # = 2x 3,{1,4} - 1,{3,4} - 4,{1,3}
+        op8 = 1/(4 * np.sqrt(3)) * (Operator_from_database(149) + 3/2 * Operator_from_database(145))        # = 2x 3,{2,4} - 2,{3,4} - 4,{2,3}
+        op9 = 1/4 * (Operator_from_database(149) - 1/2 * Operator_from_database(145))                        # = 4,{2,3} - 2,{3,4}
+        op10 = 1/4 * (Operator_from_database(150) + 1/2 * Operator_from_database(146))                       # = 4,{1,3} - 1,{3,4}
+        op11 = 1/4 * (-1/2 * Operator_from_database(151) - 1/2 * Operator_from_database(147))                # = 4,{1,2} - 1,{2,4}
+        op12 = 1/4 * (-1/2 * Operator_from_database(152) + 1/2 * Operator_from_database(148))                # = 3,{1,2} - 1,{2,3}
+
+        # d2: Tensor - irrep (8,1)
+        op13 = 1/(2 * np.sqrt(2)) * (-1/2 * Operator_from_database(43) + 1/2 * Operator_from_database(47))  # = 3,1,1 - 3,4,4
+        op14 = 1/(2 * np.sqrt(2)) * (1/2 * Operator_from_database(44) + 1/2 * Operator_from_database(48))   # = 4,3,3 - 4,1,1
+        op15 = 1/(2 * np.sqrt(2)) * (-Operator_from_database(42) + 1/2 * Operator_from_database(46))        # = 2,4,4 - 2,1,1
+        op16 = 1/(2 * np.sqrt(2)) * (Operator_from_database(41) + 1/2 * Operator_from_database(45))         # = 1,2,2 - 1,4,4
+        op17 = 1/(2 * np.sqrt(6)) * (-Operator_from_database(41) + 3/2 * Operator_from_database(45))        # = 2x 1,3,3 - 1,2,2 - 1,4,4
+        op18 = 1/(2 * np.sqrt(6)) * (Operator_from_database(42) + 3/2 * Operator_from_database(46))         # = -2x 2,3,3 + 2,1,1 + 2,4,4
+        op19 = 1/(2 * np.sqrt(6)) * (-1/2 * Operator_from_database(43) - 3/2 * Operator_from_database(47))  # = 2x 3,2,2 - 3,1,1 - 3,4,4
+        op20 = 1/(2 * np.sqrt(6)) * (1/2 * Operator_from_database(44) - 3/2 * Operator_from_database(48))   # = -2x 4,2,2 + 4,1,1 + 4,3,3
+
+        # Set custom labels
+        op1.id = "O^5_{234}"
+        op2.id = "O^5_{134}"
+        op3.id = "O^5_{124}"
+        op4.id = "O^5_{123}"
+        op5.id = "O^1_1"
+        op6.id = "O^2_1"
+        op7.id = "O^3_1"
+        op8.id = "O^4_1"
+        op9.id = "O^5_1"
+        op10.id = "O^6_1"
+        op11.id = "O^7_1"
+        op12.id = "O^8_1"
+        op13.id = "O^1_2"
+        op14.id = "O^2_2"
+        op15.id = "O^3_2"
+        op16.id = "O^4_2"
+        op17.id = "O^5_2"
+        op18.id = "O^6_2"
+        op19.id = "O^7_2"
+        op20.id = "O^8_2"
+
+        return [op1, op2, op3, op4, op5, op6, op7, op8, op9, op10,
+                op11, op12, op13, op14, op15, op16, op17, op18, op19, op20]
+
+    if paper == "Rodekamp:2023wpe":
+        # Vector
+        # irrep (3,1)
+        opV1 = 1/6 * Operator_from_database(2)                                              # = 11 + 22 + 33 - 3 * 44
+        opV2 = 1/(3 * np.sqrt(2)) * (Operator_from_database(2) - Operator_from_database(3)) # = 33 - 44
+        # irrep (6,3)
+        opV3 = 1/np.sqrt(2) * Operator_from_database(14)                                    # = 14 + 41
+
+        # Axial - irrep (6,4)
+        opA1 = 1/np.sqrt(2) * Operator_from_database(28) # = 13 + 31
+        opA2 = 1/np.sqrt(2) * Operator_from_database(32) # = 34 + 43
+
+        # Tensor
+        # irrep (8,1)
+        opT1 = Operator_from_database(42) - 1/2 * Operator_from_database(46)  # = 211 - 244
+        opT2 = - Operator_from_database(46)                                    # = 233 - 244
+        # irrep (8,2)
+        opT3 = Operator_from_database(55) + 1/2 * Operator_from_database(51)  # = 124 - 241
+        opT4 = 2 * Operator_from_database(55)                                  # = 2x 124 + 142 - 241
+
+        # Set custom labels
+        opV1.id = "V1"
+        opV2.id = "V2"
+        opV3.id = "V3"
+        opA1.id = "A1"
+        opA2.id = "A2"
+        opT1.id = "T1"
+        opT2.id = "T2"
+        opT3.id = "T3"
+        opT4.id = "T4"
+
+        return [opV1, opV2, opV3, opA1, opA2, opT1, opT2, opT3, opT4]
+
+    if paper == "Taggi:2026skn":
+        # Vector - irrep (4,2)
+        opV1 = Operator_from_database(73)  # = {2,3,4}
+        opV2 = Operator_from_database(74)  # = {1,3,4}
+        opV3 = Operator_from_database(75)  # = {1,2,4}
+        opV4 = Operator_from_database(76)  # = {1,2,3}
+
+        # Axial - irrep (4,3)
+        opA1 = Operator_from_database(125) # = {2,3,4}
+        opA2 = Operator_from_database(126) # = {1,3,4}
+        opA3 = Operator_from_database(127) # = {1,2,4}
+        opA4 = Operator_from_database(128) # = {1,2,3}
+
+        # Tensor - irrep (3,2)
+        # (operators 197 and 198 are not used: their K is proportional to p_3 (p_1^2 - p_2^2),
+        #  which vanishes for the momenta used in that work, with p_1 = p_2 or p_3 = 0)
+        opT1 = 2 * Operator_from_database(199) # = 2x 1,2,{3,4} + 1,3,{2,4} + 1,4,{2,3} - 2,3,{1,4} - 2,4,{1,3}
+
+        # Tensor - irrep (3,3)
+        # (operator 202 is not used: its K vanishes with the default polarisation projector,
+        #  gamma_pol_index=0, i.e. Γ_pol = ½(1 + γ₄)(1 − i γ₁γ₂))
+        opT2 =      Operator_from_database(200) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
+        opT3 = -2 * Operator_from_database(201) # = 2x 1,2,{1,2} + 1,3,{1,3} - 3x 1,4,{1,4} - 2,3,{2,3} + 3x 2,4,{2,4}
+
+        # Tensor - irrep (6,2), block 1 (C=-1)
+        opT4 =   Operator_from_database(233) # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
+        opT5 =   Operator_from_database(234) # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
+        opT6 = - Operator_from_database(235) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
+        opT7 =   Operator_from_database(236) # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
+        opT8 = - Operator_from_database(237) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
+        opT9 = - Operator_from_database(238) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
+
+        # Set custom labels
+        opV1.id = "V1"
+        opV2.id = "V2"
+        opV3.id = "V3"
+        opV4.id = "V4"
+        opA1.id = "A1"
+        opA2.id = "A2"
+        opA3.id = "A3"
+        opA4.id = "A4"
+        opT1.id = "T1"
+        opT2.id = "T2"
+        opT3.id = "T3"
+        opT4.id = "T4"
+        opT5.id = "T5"
+        opT6.id = "T6"
+        opT7.id = "T7"
+        opT8.id = "T8"
+        opT9.id = "T9"
+
+        return [opV1, opV2, opV3, opV4, opA1, opA2, opA3, opA4,
+                opT1, opT2, opT3, opT4, opT5, opT6, opT7, opT8, opT9]
+
+    if paper == "Alexandrou:2026tjs":
+        # 2 derivatives: Vector - irrep (4,2)
+        op1 = Operator_from_database(73)  # = {2,3,4}
+        op2 = Operator_from_database(74)  # = {1,3,4}
+        op3 = Operator_from_database(75)  # = {1,2,4}
+        op4 = Operator_from_database(76)  # = {1,2,3}
+
+        # 3 derivatives: Vector
+        # irrep (1,2)
+        op5 = Operator_from_database(285)  # = {1,2,3,4}
+        # irrep (6,2): the sum of the same component of blocks 1-4 is completely symmetric;
+        # only the three components in which the index 4 appears twice are used
+        op6 = -Operator_from_database(408) - Operator_from_database(414) - Operator_from_database(420) - Operator_from_database(426)  # = {4,4,2,3} - {1,1,2,3}
+        op7 = -Operator_from_database(409) - Operator_from_database(415) - Operator_from_database(421) - Operator_from_database(427)  # = {4,4,1,3} - {2,2,1,3}
+        op8 = -Operator_from_database(410) - Operator_from_database(416) - Operator_from_database(422) - Operator_from_database(428)  # = {4,4,1,2} - {3,3,1,2}
+
+        # Set custom labels
+        op1.id = "{2,3,4}"
+        op2.id = "{1,3,4}"
+        op3.id = "{1,2,4}"
+        op4.id = "{1,2,3}"
+        op5.id = "{1,2,3,4}"
+        op6.id = "{4,4,2,3} - {1,1,2,3}"
+        op7.id = "{4,4,1,3} - {2,2,1,3}"
+        op8.id = "{4,4,1,2} - {3,3,1,2}"
+
+        return [op1, op2, op3, op4, op5, op6, op7, op8]
 
 
 def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:

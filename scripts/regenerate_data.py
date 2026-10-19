@@ -249,8 +249,8 @@ def regenerate_cg(data, workdir, products, jobs, from_raw=False):
 
 
 def report_operator_changes(old_folder, new_folder):
-    """Log which operator IDs changed, in particular those hard-coded in get_op_selection."""
-    from h4lat import get_op_selection
+    """Log which operator IDs changed, in particular those hard-coded in get_op_selection and get_paper_operators."""
+    from h4lat import get_op_selection, get_paper_operators
 
     def load(folder):
         ops = {}
@@ -277,19 +277,24 @@ def report_operator_changes(old_folder, new_folder):
     if changed:
         log.info("operators: changed IDs: %s", id_ranges(changed))
 
-    source = inspect.getsource(get_op_selection)
-    used = sorted({int(i) for i in re.findall(r"Operator_from_database\((\d+)\)", source)})
-    affected = [i for i in used if statuses.get(i) != "unchanged"]
-    if not affected:
-        log.info("operators: the %d IDs used by get_op_selection are unchanged", len(used))
-    for i in affected:
-        now_at = []
-        if i in old:
-            tensor = old[i][1]
-            now_at = [j for j, (_, t) in sorted(new.items()) if t.shape == tensor.shape and np.allclose(t, tensor)]
-        log.warning(
-            "operators: get_op_selection uses ID %d: %s; its old tensor is now at IDs %s", i, statuses.get(i), now_at
-        )
+    for function in (get_op_selection, get_paper_operators):
+        source = inspect.getsource(function)
+        used = sorted({int(i) for i in re.findall(r"Operator_from_database\((\d+)\)", source)})
+        affected = [i for i in used if statuses.get(i) != "unchanged"]
+        if not affected:
+            log.info("operators: the %d IDs used by %s are unchanged", len(used), function.__name__)
+        for i in affected:
+            now_at = []
+            if i in old:
+                tensor = old[i][1]
+                now_at = [j for j, (_, t) in sorted(new.items()) if t.shape == tensor.shape and np.allclose(t, tensor)]
+            log.warning(
+                "operators: %s uses ID %d: %s; its old tensor is now at IDs %s",
+                function.__name__,
+                i,
+                statuses.get(i),
+                now_at,
+            )
 
 
 def regenerate_operators(data, workdir, max_n):

@@ -41,6 +41,7 @@ from .cg_calculator import (
     rep_label_list,
 )
 from .moments_operator import (
+    AVAILABLE_PAPERS,
     C_parity,
     Kfactor_from_diracO,
     Operator,
@@ -55,6 +56,7 @@ from .moments_operator import (
     get_OperatorDict,
     get_OperatorList,
     get_op_selection,
+    get_paper_operators,
     h5_to_operator_list,
     index_symm,
     index_symm_2exchange,
@@ -106,6 +108,9 @@ __all__ = [
     "get_OperatorList",
     "get_OperatorDict",
     "get_op_selection",
+    # Operators used in published works
+    "get_paper_operators",
+    "AVAILABLE_PAPERS",
     "cg_remapping",
     "cg_remapping_T",
     "symO_from_Cgmat",
