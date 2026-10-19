@@ -169,7 +169,7 @@ class Operator:
     def __init__(
         self,
         cgmat: np.ndarray,
-        id: int | str,
+        id: int | str | None,
         X: str,
         irrep: tuple[int, int] | None,
         block: int | None,
@@ -181,8 +181,9 @@ class Operator:
         ----------
         cgmat : ndarray, shape (4,)*n
             CG coefficient tensor in the remapped form (see ``cg_remapping``).
-        id : int or str
-            Operator identifier (used in filenames and catalogues).
+        id : int, str or None
+            Operator identifier (used in filenames and catalogues).  None for an
+            operator built by ``+`` or ``-``, which has no database id.
         X : str
             Dirac structure: ``'V'`` (vector γ_μ), ``'A'`` (axial γ_μγ₅),
             ``'T'`` (tensor σ_{μν} = i/2 [γ_μ, γ_ν]), ``'S'`` (scalar 𝟙),

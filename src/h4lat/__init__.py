@@ -9,6 +9,8 @@ Quick start
 >>> cg.cg_dict                                  # {irrep_index: [cgmat, ...], ...}
 """
 
+import importlib.metadata as _metadata
+
 from .kinematic_data import (
     Gamma_pol,
     Gamma_pol_list,
@@ -67,7 +69,11 @@ from .moments_operator import (
     write_operator,
 )
 
-__version__ = "0.1.0"
+# The version set in pyproject.toml, read from the metadata of the installed package.
+try:
+    __version__ = _metadata.version("h4lat")
+except _metadata.PackageNotFoundError:  # a source tree that is not installed
+    __version__ = "unknown"
 __author__ = "Emilio Taggi"
 
 __all__ = [

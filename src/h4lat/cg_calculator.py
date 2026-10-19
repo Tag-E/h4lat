@@ -644,7 +644,9 @@ class cg_calc:
                     with open(f'{rep_folder}/{i}.npy', 'wb') as f:
                         np.save(f, ele)
 
-        elif Path(self.h4_ele_folder).exists():
+        # Here the folder exists and force_h4gen is False: load the stored matrices of all
+        # the H(4) elements (the bundled ones, or those saved earlier in the local folder).
+        else:
 
             if verbose:
                 print("\nLoading matrix representations for all the elements of H(4) ...\n")
@@ -1139,8 +1141,11 @@ def CGmat_from_block(
     Everything is done on the numerical coefficients of the symbols, so the result
     does not depend on how sympy orders the terms of an expression.
 
-    With multiplicity 1 there is a single copy, the same for any A up to a factor;
-    the factor is fixed by the first non-zero entry of column 0 being +1.
+    The first non-zero entry of column 0 of every copy is then +1 (its reference
+    row); with multiplicity 1, where the copy is the same for any A up to a factor,
+    this is what fixes the factor.  With *normalize*, every column is further divided
+    by the absolute value of its first non-zero entry, so that entry is ±1: +1 for
+    column 0, while the other columns keep their sign.
 
     With *enforce_c_parity*, every copy also has a definite C-parity.  Charge
     conjugation reverses the derivative indices, which on the rows of the block is a
