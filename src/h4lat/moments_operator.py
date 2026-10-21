@@ -1476,6 +1476,7 @@ AVAILABLE_PAPERS = {
     "Rodekamp:2023wpe": "10.1103/PhysRevD.109.074508",
     "Taggi:2026skn": "10.1103/kknt-zxsw",
     "Alexandrou:2026tjs": "10.48550/arXiv.2607.03458",
+    "Gockeler:2004wp": "10.1103/PhysRevD.71.114511",
 }
 
 
@@ -1508,6 +1509,8 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
       2 derivatives: vector, irrep (4,2); axial, irrep (4,3); tensor, irreps (3,2), (3,3) and (6,2).
     * ``"Alexandrou:2026tjs"`` — C. Alexandrou et al., arXiv:2607.03458 (2026).
       Vector: 2 derivatives, irrep (4,2); 3 derivatives, irreps (1,2) and (6,2).
+    * ``"Gockeler:2004wp"`` — M. Göckeler et al., Phys. Rev. D 71, 114511 (2005), arXiv:hep-ph/0410187.
+      Vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1).
 
     Parameters
     ----------
@@ -1732,6 +1735,33 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
         op8.id = "{4,4,1,2} - {3,3,1,2}"
 
         return [op1, op2, op3, op4, op5, op6, op7, op8]
+
+    if paper == "Gockeler:2004wp":
+        # Operators of Eq. (31) of the paper, for the moments v_2, v_3 and v_4 of the unpolarised structure
+        # functions (the paper uses the momenta p = 0 and p = (p_1, 0, 0))
+
+        # Second moment, v_2 (1 derivative)
+        # Vector - irrep (6,3), C=+1
+        opv2a = Operator_from_database(14)        # = {1,4}
+        # Vector - irrep (3,1), C=+1
+        opv2b = -1/3 * Operator_from_database(2)  # = 4,4 - 1/3 * (1,1 + 2,2 + 3,3)
+
+        # Third moment, v_3 (2 derivatives): Vector - irrep (8,1), C=-1
+        # (the same combination of components 1 and 5 of blocks 1 and 2: each part has mixed symmetry,
+        #  their sum is completely symmetric, so the operator belongs to no single block)
+        opv3 = -1/2 * (Operator_from_database(81) + 3/2 * Operator_from_database(85) + Operator_from_database(89) + 3/2 * Operator_from_database(93))  # = {4,4,1} - 1/2 * ({2,2,1} + {3,3,1})
+
+        # Fourth moment, v_4 (3 derivatives): Vector - irrep (2,1), C=+1
+        # (likewise, the same combination of components 1 and 2 of blocks 1 and 2)
+        opv4 = (-Operator_from_database(287) - 3/2 * Operator_from_database(288) - Operator_from_database(289) - 3/2 * Operator_from_database(290)) / 2  # = {1,1,4,4} + {2,2,3,3} - 1/2 * ({1,1,2,2} + {1,1,3,3} + {2,2,4,4} + {3,3,4,4})
+
+        # Set custom labels
+        opv2a.id = "v_2a"
+        opv2b.id = "v_2b"
+        opv3.id = "v_3"
+        opv4.id = "v_4"
+
+        return [opv2a, opv2b, opv3, opv4]
 
 
 def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:

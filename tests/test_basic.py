@@ -567,6 +567,7 @@ def test_paper_operators_labels():
         "Taggi:2026skn": ["V1", "V2", "V3", "V4", "A1", "A2", "A3", "A4"] + [f"T{i}" for i in range(1, 10)],
         "Alexandrou:2026tjs": ["{2,3,4}", "{1,3,4}", "{1,2,4}", "{1,2,3}", "{1,2,3,4}"]
         + ["{4,4,2,3} - {1,1,2,3}", "{4,4,1,3} - {2,2,1,3}", "{4,4,1,2} - {3,3,1,2}"],
+        "Gockeler:2004wp": ["v_2a", "v_2b", "v_3", "v_4"],
     }
     assert list(expected) == list(AVAILABLE_PAPERS)
     for paper, ids in expected.items():
@@ -588,6 +589,7 @@ def test_paper_operators_irreps():
         + [("T", 4, (3, 3))] * 2
         + [("T", 4, (6, 2))] * 6,
         "Alexandrou:2026tjs": [("V", 3, (4, 2))] * 4 + [("V", 4, (1, 2))] + [("V", 4, (6, 2))] * 3,
+        "Gockeler:2004wp": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))],
     }
     for paper, structure in expected.items():
         ops = get_paper_operators(paper)
@@ -633,6 +635,48 @@ def test_paper_operators_explicit():
     expected = np.zeros((4, 4, 4))
     expected[0, 2, 0] = expected[2, 3, 3] = -1 / (2 * np.sqrt(2))
     assert np.allclose(get_paper_operators("Burger:2021knd")[12].cgmat, expected)
+
+
+def test_paper_operators_gockeler():
+    """The operators of Göckeler et al. are those of Eq. (31) of the paper, with the C-parities of its Table 2."""
+
+    def braces(*indices):
+        """{i,j,...}: every distinct ordering of the (1-based) indices, with coefficient 1."""
+        tensor = np.zeros((4,) * len(indices))
+        for ordering in set(it.permutations(i - 1 for i in indices)):
+            tensor[ordering] += 1
+        return tensor
+
+    # Eq. (31), written out index by index
+    expected = [
+        braces(1, 4),
+        braces(4, 4) - 1 / 3 * (braces(1, 1) + braces(2, 2) + braces(3, 3)),
+        braces(4, 4, 1) - 1 / 2 * (braces(2, 2, 1) + braces(3, 3, 1)),
+        braces(1, 1, 4, 4)
+        + braces(2, 2, 3, 3)
+        - 1 / 2 * (braces(1, 1, 3, 3) + braces(1, 1, 2, 2) + braces(2, 2, 4, 4) + braces(3, 3, 4, 4)),
+    ]
+    ops = get_paper_operators(doi="https://doi.org/10.1103/PhysRevD.71.114511")
+    assert len(ops) == len(expected)
+    for op, cgmat in zip(ops, expected):
+        assert np.allclose(op.cgmat, cgmat), op.id
+    assert [op.C for op in ops] == [1, 1, -1, 1]
+    # v_3 and v_4 are sums over blocks 1 and 2 of their irrep: completely symmetric, but in no single block
+    assert [op.block for op in ops] == [1, 1, None, None]
+    assert all(op.symm == "Symmetric" and op.tr == "= 0" for op in ops)
+
+
+def test_paper_operators_gockeler_kinematic_factors():
+    """At p = (p_1, 0, 0), K of each operator of Göckeler et al. is a constant times its ratio in Eq. (39)."""
+    # the ratios of Eq. (39), for v_2a, v_2b, v_3 and v_4 (without the moments v_n)
+    ratios = [I * p1, -(E**2 + p1**2 / 3) / E, -I * p1 * E, p1**2 * E]
+    factors = []
+    for op, ratio in zip(get_paper_operators("Gockeler:2004wp"), ratios):
+        # K depends on m_N only through m_N^2 = E^2 - p_1^2
+        K = op.K.subs({p2: 0, p3: 0}).subs(mN**2, E**2 - p1**2)
+        factors.append(sym.simplify(K / ratio))
+    # the factors come from the normalisation of the operators and of K
+    assert factors == [-2 * I, -I, -3, 6 * I]
 
 
 def test_paper_operators_notebook_code():
