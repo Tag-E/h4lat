@@ -14,20 +14,15 @@ import sympy as sym
 
 import h4lat.cg_calculator as cc
 from h4lat import cg_calc, char_table, class_orders, irrep_index, rep_dim_list, rep_label_list
+from h4lat.moments_operator import _X_ORDER, _operator_irreps
 
-BUNDLED_PRODUCTS = [
-    ((4, 1), (4, 1)),
-    ((4, 4), (4, 1)),
-    ((6, 1), (4, 1)),
-    ((4, 1), (4, 1), (4, 1)),
-    ((4, 4), (4, 1), (4, 1)),
-    ((6, 1), (4, 1), (4, 1)),
-    ((4, 1), (4, 1), (4, 1), (4, 1)),
-    ((4, 4), (4, 1), (4, 1), (4, 1)),
-    ((6, 1), (4, 1), (4, 1), (4, 1)),
-]
-# raw blocks are bundled only for products of up to three irreps (see scripts/regenerate_data.py)
+# The products of the bundled operator database: irrep(X) ⊗ (4,1)^k for X = S, P, V, A, T
+# ((1,1), (1,4), (4,1), (4,4), (6,1)) and k = 0 (the irrep alone), 1, 2, 3 derivatives.
+BUNDLED_PRODUCTS = [_operator_irreps(X, nder) for nder in range(4) for X in _X_ORDER]
+# raw blocks are bundled only for products of up to three irreps, i.e. up to two derivatives
+# (see scripts/regenerate_data.py)
 BUNDLED_RAW_PRODUCTS = [p for p in BUNDLED_PRODUCTS if len(p) <= 3]
+SINGLE_IRREPS = [p for p in BUNDLED_PRODUCTS if len(p) == 1]
 
 TINY = ((2, 1), (2, 1))  # 4-dimensional product, computed in a few seconds
 
@@ -307,6 +302,15 @@ def test_cgmat_from_block_gives_exact_c_parity():
         assert np.array_equal(C[perm], C) or np.array_equal(C[perm], -C), f"block {irep}_{m}"
 
 
+@pytest.mark.parametrize("irreps", _params(SINGLE_IRREPS))
+def test_bundled_single_irreps_have_the_identity_as_cg_matrix(irreps):
+    """The "product" of one irrep is the irrep itself: one copy, whose CG matrix is the identity (Schur's lemma)."""
+    cg = cg_calc(*irreps, verbose=False)
+    (irep, blocks), = cg.cg_dict.items()
+    assert rep_label_list[irep] == irreps[0] and len(blocks) == 1
+    assert np.array_equal(blocks[0], np.eye(irreps[0][0]))
+
+
 @pytest.mark.parametrize("irreps", _params(BUNDLED_PRODUCTS))
 def test_cg_dict_follows_multiplicity_order(irreps):
     """cg_dict[irep][m] is the file '{irep}_{m}.npy', whatever the filesystem order."""
@@ -323,11 +327,12 @@ def test_cg_dict_follows_multiplicity_order(irreps):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("irreps", _params([((1, 1), (4, 1)), ((1, 4), (4, 1))]))
-def test_products_with_a_one_dimensional_factor(h4, irreps, tmp_path, monkeypatch):
-    """Products with a 1-dim factor (scalar and pseudoscalar operators) are computed correctly."""
-    monkeypatch.chdir(tmp_path)  # the new CGs are written to ./cg_database
-    cg_dict = cg_calc(*irreps, verbose=False).cg_dict
+@pytest.mark.parametrize(
+    "irreps", _params([((1, 1), (4, 1)), ((1, 4), (4, 1)), ((1, 4), (4, 1), (4, 1)), ((1, 4),), ((6, 1),)])
+)
+def test_products_with_a_one_dimensional_factor_or_a_single_irrep(h4, irreps, tmp_path):
+    """Products with a 1-dim factor (S and P operators) and single irreps (no derivatives) are computed correctly."""
+    cg_dict = cg_calc(*irreps, cgdatabase=str(tmp_path), force_computation=True, verbose=False).cg_dict
     _assert_blocks_transform_as_their_irrep(h4, irreps, cg_dict)
     _assert_blocks_are_independent(irreps, cg_dict)
 

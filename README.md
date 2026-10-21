@@ -59,8 +59,9 @@ onto specific moments of parton distributions via the OPE.
 This library provides:
 
 * A pre-computed **CG database** (`.npy` files, bundled with the package) for all
-  tensor products encountered in standard moments of PDFs calculations, with up to
-  three derivatives.
+  tensor products encountered in standard moments of PDFs calculations: the operators
+  ψ̄ Γ D⋯D ψ with Γ = 𝟙, γ₅, γ_μ, γ_μγ₅, σ_μν (S, P, V, A, T) and zero to three
+  derivatives.
 * A **calculator** (`cg_calc`) that loads from the database or computes new CG
   coefficients on demand using the projection formula of
   [Sakata (1974)](https://doi.org/10.1063/1.1666528).
@@ -107,7 +108,7 @@ Jupyter notebooks with worked examples are provided in the [`examples/`](example
 |----------|-------------|
 | [`quickstart.ipynb`](examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
 | [`operator_algebra.ipynb`](examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
-| [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Listing of every operator with up to two derivatives in the bundled database (IDs 1–280), organised by Dirac structure, number of indices, and H(4) irrep |
+| [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Listing of the most relevant operators of the bundled database — V, A and T with one and two derivatives (IDs 25–80 and 113–336) — organised by number of derivatives, Dirac structure, and H(4) irrep; all the operators are in the [PDF catalogue](#operator-catalogue-pdf) |
 | [`paper_operators.ipynb`](examples/paper_operators.ipynb) | Operators used in published works, selected with `get_paper_operators` by INSPIRE texkey or DOI, and the code that builds them from the operators of the bundled database |
 
 A Google Colab notebook with some minimal working examples can be found [here](https://colab.research.google.com/drive/1KFnE0hi4XDNyo2Kg8iDKSSEqY1YQkPGZ?usp=sharing).
@@ -148,12 +149,14 @@ for irep_idx, matrices in cg.cg_dict.items():
           f"shape {matrices[0].shape}")
 ```
 
-The bundled database holds the products of X = (4,1), (4,4) or (6,1) (vector, axial,
-tensor) with one, two or three (4,1) factors (the derivatives).  The raw symbolic blocks
-from which the CG matrices are derived (`cg.raw_cg`, read on first access, needed by
-`prescription_changed=True`) are bundled only for products of up to three irreps: for
-the products of four irreps they would take tens of MB, so recompute them with
-`force_computation=True` (about a minute) if you need them.
+The bundled database holds the products of X = (1,1), (1,4), (4,1), (4,4) or (6,1)
+(scalar, pseudoscalar, vector, axial, tensor) with zero, one, two or three (4,1) factors
+(the derivatives).  With no derivatives the "product" is the irrep of X alone, e.g.
+`cg_calc((6, 1))`, whose CG matrix is the identity.  The raw symbolic blocks from which
+the CG matrices are derived (`cg.raw_cg`, read on first access, needed by
+`prescription_changed=True`) are bundled only for products of up to three irreps (up to
+two derivatives): for the products of four irreps they would take tens of MB, so
+recompute them with `force_computation=True` (about a minute) if you need them.
 
 ### Computing new CG coefficients
 
@@ -214,12 +217,22 @@ print("symm =", op.symm)   # Index symmetry
 
 ### Loading operators from the bundled database
 
-The package ships with a pre-built operator database of 1176 operators, with up to three
-derivatives: V and A with up to 4 indices, T with up to 5 (IDs 1–1176, ordered as V2, A2,
-T3, V3, A3, T4, V4, A4, T5).  The two convenience getters below load it without any path
-configuration.  The symbolic expression `op.O`, the kinematic factor `op.K` and their
-LaTeX forms are computed when first accessed, so loading the whole database takes about
-a second:
+The package ships with a pre-built operator database of 1360 operators ψ̄ Γ D⋯D ψ: every
+Dirac structure S (Γ = 𝟙), P (γ₅), V (γ_μ), A (γ_μγ₅) and T (σ_μν), with zero to three
+derivatives.  The IDs run over the number of derivatives and, for each, over S, P, V, A, T
+(the 16 operators without derivatives first, then 64 with one, 256 with two, 1024 with
+three):
+
+| Derivatives | S | P | V | A | T |
+|-------------|---|---|---|---|---|
+| 0 | 1 | 2 | 3–6 | 7–10 | 11–16 |
+| 1 | 17–20 | 21–24 | 25–40 | 41–56 | 57–80 |
+| 2 | 81–96 | 97–112 | 113–176 | 177–240 | 241–336 |
+| 3 | 337–400 | 401–464 | 465–720 | 721–976 | 977–1360 |
+
+The two convenience getters below load it without any path configuration.  The symbolic
+expression `op.O`, the kinematic factor `op.K` and their LaTeX forms are computed when
+first accessed, so loading the whole database takes about a second:
 
 ```python
 from h4lat import get_OperatorList, get_OperatorDict
@@ -243,14 +256,24 @@ print(f"K (numerical) = {K_val}")
 
 # The polarisation matrix used to compute K can be changed (indices 0–5, default 0 = γ₁γ₂):
 op.set_polarization_matrix(2)   # switch to Γ_pol = ½(1 + γ₄)(1 − i γ₂γ₃)
+
+# --- A selection, by Dirac structure X and number of derivatives nder (or keys "<X><nder>") ---
+local = get_OperatorList(nder=0)              # ψ̄ψ, ψ̄γ₅ψ, ψ̄γ_μψ, ψ̄γ_μγ₅ψ, ψ̄σ_μνψ (IDs 1–16)
+scalars = get_OperatorList(X="S", nder=2)     # ψ̄ D_μ D_ν ψ (IDs 81–96)
+some = get_OperatorList(keys="V1 A1")         # V and A with one derivative (IDs 25–56)
 ```
+
+Operators without Lorentz indices (ψ̄ψ and ψ̄γ₅ψ) have a 0-index `op.cgmat`, of shape `()`.
+When there are fewer than two indices to permute (S and P with up to one derivative, V and A
+without derivatives, T without derivatives), `op.symm` is `"Symmetric"` (vacuously).
 
 ```python
 # --- Nested dict, keyed by (n, X) then (irrep, block) ---
+# n is the number of Lorentz indices: nder for S/P, nder + 1 for V/A, nder + 2 for T
 d = get_OperatorDict()
 
 # All 2-index vector operators in irrep (6,1), multiplicity block 1:
-# (4,1)⊗(4,1) decomposes into (1,1)⊕(3,1)⊕(6,1)⊕(6,3); (6,1) is the symmetric traceless piece.
+# (4,1)⊗(4,1) decomposes into (1,1)⊕(3,1)⊕(6,1)⊕(6,3); (6,1) is the antisymmetric piece.
 ops_V2 = d[(2, 'V')][(6, 1), 1]
 for op in ops_V2:
     print(f"  id={op.id}  symm={op.symm}  C={op.C}")
@@ -262,10 +285,27 @@ if (3, 'A') in d and ((8, 1), 1) in d[(3, 'A')]:
 ```
 
 Both functions are thin wrappers that call the more general
-`OperatorList_from_database` / `OperatorDict_from_database` with no arguments,
+`OperatorList_from_database` / `OperatorDict_from_database` without a path,
 so they always read from `OPERATOR_DATABASE` (the bundled path).  Pass an
-explicit path to the underlying functions if you have generated a custom
-database with `make_operator_database`.
+explicit path to the underlying functions (which take the same `X`, `nder` and
+`keys` selection) if you have generated a custom database with
+`make_operator_database`.
+
+**Operator IDs before October 2026.**  Until October 2026 the bundled database held only the
+V, A and T operators with one to three derivatives (IDs 1–1176).  Adding the S and P
+operators and the operators without derivatives shifted every ID; the operators themselves
+are unchanged.  An old ID of an operator with one, two or three derivatives maps to a new
+one as follows:
+
+| Old IDs | Derivatives | New ID |
+|---------|-------------|--------|
+| 1–56 | 1 | old + 24 |
+| 57–280 | 2 | old + 56 |
+| 281–1176 | 3 | old + 184 |
+
+At the same time the C-parity of the P operators was corrected: the pseudoscalar density
+ψ̄γ₅ψ is C-even (as the π⁰), so `C_parity` now gives η (−1)^nder with η = +1 for S, P and A
+and −1 for V and T.  P operators had not been bundled before, so no bundled operator changed.
 
 ### Operator catalogue (PDF)
 
@@ -274,18 +314,19 @@ lists the expression, the kinematic factor, the C-parity, the trace condition an
 index symmetry, grouped by Dirac structure, number of indices and H(4) irrep.
 
 Computing the kinematic factors takes most of the time, so by default the catalogue holds
-the V, A and T operators with one and two derivatives (IDs 1–280: about 30 s on a laptop,
-20 s with `-j`; the whole database takes about a minute with `-j`).  Select other
+the S, P, V, A and T operators with zero, one and two derivatives (IDs 1–336: about 30 s on
+a laptop, 20 s with `-j`; the whole database takes about a minute with `-j`).  Select other
 operators by Dirac structure (`-X`) and number of derivatives (`--nder`), or with keys made
 of the Dirac structure followed by the number of derivatives (`--keys V2 V3 A3`: `V2` is the
 vector operators with two derivatives, i.e. three Lorentz indices).  `-j` computes the
 kinematic factors on several processes (`-j` alone: all cores):
 
 ```bash
-h4lat-catalogue                           # V, A, T with 1, 2 derivatives -> ./operator_catalogue_VAT_nder12.pdf
-h4lat-catalogue -X V --nder 1 2 3         # vector operators with up to 3 derivatives -> operator_catalogue_V_nder123.pdf
+h4lat-catalogue                           # S, P, V, A, T with 0, 1, 2 derivatives -> ./operator_catalogue_SPVAT_nder012.pdf
+h4lat-catalogue -X V --nder 1 2 3         # vector operators with 1 to 3 derivatives -> operator_catalogue_V_nder123.pdf
+h4lat-catalogue --nder 0                  # the local bilinears ψ̄ Γ ψ -> operator_catalogue_SPVAT_nder0.pdf
 h4lat-catalogue --keys V2 V3 A3 -j        # a selection, on all cores -> operator_catalogue_V2_V3_A3.pdf
-h4lat-catalogue -X V A T --nder 1 2 3 -j  # the whole bundled database
+h4lat-catalogue --nder 0 1 2 3 -j         # the whole bundled database
 h4lat-catalogue -o docs/ops.pdf --open    # custom path, open the PDF when done
 h4lat-catalogue --database my_operators   # catalogue of a custom operator database
 ```
@@ -303,22 +344,23 @@ same selection and returns the path of the PDF:
 ```python
 from h4lat import operator_show
 
-operator_show(show=False)                                    # V, A, T with 1, 2 derivatives
-operator_show(X="V", nder=[1, 2, 3], show=False)             # vector operators, up to 3 derivatives
+operator_show(show=False)                                    # S, P, V, A, T with 0, 1, 2 derivatives
+operator_show(X="V", nder=[1, 2, 3], show=False)             # vector operators with 1 to 3 derivatives
 operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # n_jobs=None: all cores
 ```
 
 In a script, call it with `n_jobs > 1` under `if __name__ == "__main__":`, as usual with
 multiprocessing.  If you have no LaTeX installation, the
-[`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) notebook shows the operators
-with up to two derivatives.  With a development install, run `pip install -e .` again after
+[`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) notebook shows the most
+relevant operators (V, A and T with one and two derivatives), and its `show_group` function
+lists any other group.  With a development install, run `pip install -e .` again after
 pulling this change so that the command is registered.
 
 The kinematic factors are computed in exact arithmetic: the CG coefficients, computed in
 floating point, are first converted to the exact numbers they approximate (fractions such as
 ⅓, or square roots of fractions such as 1/√2).  Until October 2026 they entered SymPy as
-floats, and some kinematic factors that vanish (operators 120, 340, 343, 557 and 560) were
-printed as tiny numbers of order 1e-16 instead of 0.
+floats, and some kinematic factors that vanish (operators 176, 524, 527, 741 and 744 of the
+current numbering) were printed as tiny numbers of order 1e-16 instead of 0.
 
 ### Operators used in the literature
 
@@ -360,10 +402,15 @@ from h4lat import make_operator_database
 
 make_operator_database(
     operator_folder="my_operators",
-    max_n=4,        # V and A up to 4 indices; T up to 5 indices (as the bundled database)
+    max_nder=3,     # S, P, V, A and T with 0 to 3 derivatives (as the bundled database)
     verbose=True,
 )
 ```
+
+The operators are numbered as in the bundled database (by number of derivatives, then
+S, P, V, A, T).  The folder must not already hold operator files.  Products beyond the
+bundled ones (four or more derivatives) are computed by `cg_calc`, which for four
+derivatives takes a lot of memory.
 
 ### Saving and reloading operators (HDF5)
 

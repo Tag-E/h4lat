@@ -15,17 +15,23 @@ generators in the code (force_h4gen), never from stale bundled matrices.  With
 --from-raw, the cg stage instead only re-applies CGmat_from_block to the bundled raw
 blocks (`{product}_raw/`), which takes seconds: use it when CGmat_from_block changed
 but the generators did not.  Raw blocks are bundled only for products of up to
-MAX_RAW_IRREPS irreps: those of larger products take tens of MB and long to load, and
-computing such a product takes about a minute, so --from-raw recomputes them instead.
+MAX_RAW_IRREPS irreps, i.e. for the operators with up to two derivatives: those of larger
+products take tens of MB and long to load, and computing such a product takes about a
+minute, so --from-raw recomputes them instead.
+
+The operator database holds the operators of every Dirac structure (S, P, V, A, T) with
+0 to --max-nder derivatives, so it needs the products irrep(X) ⊗ (4,1)^k for k = 0 (the
+irrep of X alone), 1, ..., max_nder.
 
 Examples (from the repository root, with h4lat installed with `pip install -e .`):
 
   python scripts/regenerate_data.py all --jobs 6
   python scripts/regenerate_data.py h4
   python scripts/regenerate_data.py cg --products "(6,1),(4,1)" "(4,1),(4,1)"
+  python scripts/regenerate_data.py cg --products "(1,4)" "(1,4),(4,1)"   # a single irrep: no derivatives
   python scripts/regenerate_data.py cg --from-raw
   python scripts/regenerate_data.py cg --products "(6,1),(4,1),(4,1),(4,1)"
-  python scripts/regenerate_data.py operators            # up to --max-n 4 indices (V, A; T: 5)
+  python scripts/regenerate_data.py operators            # up to --max-nder 3 derivatives
 
 Then run `python -m pytest tests/test_cg_correctness.py` (and the full suite) and
 commit src/h4lat/data.
@@ -63,18 +69,25 @@ def product_name(product):
     return "".join(str(irrep) for irrep in product)
 
 
+def is_irrep(value):
+    """Whether *value* is an irrep label, a pair of integers such as (4, 1)."""
+    return isinstance(value, tuple) and len(value) == 2 and all(isinstance(x, int) for x in value)
+
+
 def parse_product(text):
-    """Parse a command-line product such as '(6,1),(4,1)' into ((6, 1), (4, 1))."""
+    """Parse a command-line product such as '(6,1),(4,1)' into ((6, 1), (4, 1)).
+
+    A single irrep, '(4,1)', is the product ((4, 1),) of one factor (an operator without
+    derivatives).
+    """
     try:
         product = ast.literal_eval(text)
     except (ValueError, SyntaxError):
         product = None
-    if not (
-        isinstance(product, tuple)
-        and len(product) >= 2
-        and all(isinstance(irrep, tuple) and len(irrep) == 2 for irrep in product)
-    ):
-        raise argparse.ArgumentTypeError(f"not a product of at least two irreps: {text!r}")
+    if is_irrep(product):
+        product = (product,)
+    if not (isinstance(product, tuple) and product and all(is_irrep(irrep) for irrep in product)):
+        raise argparse.ArgumentTypeError(f"not an irrep or a product of irreps: {text!r}")
     return product
 
 
@@ -88,10 +101,11 @@ def bundled_products(data):
     ]
 
 
-def operator_products(max_n):
-    """Products that make_operator_database needs for V, A and T operators up to *max_n* indices."""
-    leading = {"V": (4, 1), "A": (4, 4), "T": (6, 1)}
-    return [(leading[X],) + ((4, 1),) * (n - 1) for n in range(2, max_n + 1) for X in "VAT"]
+def operator_products(max_nder):
+    """Products that make_operator_database needs for the operators with up to *max_nder* derivatives."""
+    from h4lat.moments_operator import _X_ORDER, _operator_irreps
+
+    return [_operator_irreps(X, nder) for nder in range(max_nder + 1) for X in _X_ORDER]
 
 
 def duration(seconds):
@@ -249,18 +263,58 @@ def regenerate_cg(data, workdir, products, jobs, from_raw=False):
 
 
 def report_operator_changes(old_folder, new_folder):
-    """Log which operator IDs changed, in particular those hard-coded in get_op_selection and get_paper_operators."""
+    """Log how the operator database changed, in particular at the IDs used in get_op_selection and get_paper_operators.
+
+    The operators of the two databases are matched by their metadata (number of indices, Dirac
+    structure, irrep, copy and component, read from the file name), which identifies an operator
+    also when its ID changes.  The log states the operators added and removed, those whose tensor
+    changed, and how the IDs of the others moved.
+    """
     from h4lat import get_op_selection, get_paper_operators
 
     def load(folder):
+        """{ID: (metadata, tensor)} of the operator files operator_{ID}_{metadata}.npy in *folder*."""
         ops = {}
         for f in folder.glob("*.npy"):
             _, i, *meta = f.stem.split("_")
             ops[int(i)] = ("_".join(meta), np.load(f))
         return ops
 
+    def same_tensor(a, b):
+        return a.shape == b.shape and np.allclose(a, b)
+
     old, new = load(old_folder), load(new_folder)
 
+    # --- by operator (metadata): added, removed, changed tensors, moved IDs ---
+    old_by_meta = {meta: (i, tensor) for i, (meta, tensor) in old.items()}
+    new_by_meta = {meta: (i, tensor) for i, (meta, tensor) in new.items()}
+    kept = old_by_meta.keys() & new_by_meta.keys()
+    added = sorted(new_by_meta[meta][0] for meta in new_by_meta.keys() - kept)
+    removed = sorted(old_by_meta[meta][0] for meta in old_by_meta.keys() - kept)
+    changed = sorted(new_by_meta[m][0] for m in kept if not same_tensor(old_by_meta[m][1], new_by_meta[m][1]))
+    log.info(
+        "operators: %d before, %d now; %d kept, %d of them with a changed tensor",
+        len(old),
+        len(new),
+        len(kept),
+        len(changed),
+    )
+    if added:
+        log.info("operators: added, at the new IDs %s", id_ranges(added))
+    if removed:
+        log.info("operators: removed, from the old IDs %s", id_ranges(removed))
+    if changed:
+        log.info("operators: changed tensors, at the new IDs %s", id_ranges(changed))
+    # old ID -> new ID of the same operator, grouped by the shift (new ID - old ID)
+    shifts = {}
+    for meta in sorted(kept, key=lambda m: old_by_meta[m][0]):
+        old_id, new_id = old_by_meta[meta][0], new_by_meta[meta][0]
+        if new_id != old_id:
+            shifts.setdefault(new_id - old_id, []).append(old_id)
+    for shift, ids in sorted(shifts.items(), key=lambda item: item[1][0]):
+        log.warning("operators: renumbered: the operators of the old IDs %s now have ID %+d", id_ranges(ids), shift)
+
+    # --- by ID: what the IDs used in the code refer to now ---
     def status(i):
         if i not in old or i not in new:
             return "added" if i in new else "removed"
@@ -272,10 +326,6 @@ def report_operator_changes(old_folder, new_folder):
         return "sign flipped" if np.allclose(a, -b) else "changed"
 
     statuses = {i: status(i) for i in sorted(old.keys() | new.keys())}
-    changed = [i for i, s in statuses.items() if s != "unchanged"]
-    log.info("operators: %d of %d unchanged", len(statuses) - len(changed), len(statuses))
-    if changed:
-        log.info("operators: changed IDs: %s", id_ranges(changed))
 
     for function in (get_op_selection, get_paper_operators):
         source = inspect.getsource(function)
@@ -297,22 +347,22 @@ def report_operator_changes(old_folder, new_folder):
             )
 
 
-def regenerate_operators(data, workdir, max_n):
+def regenerate_operators(data, workdir, max_nder):
     """Rebuild the operator database from the bundled CGs, report changed IDs, install."""
     from h4lat import make_operator_database
 
-    missing = [p for p in operator_products(max_n) if not (data / "cg_database" / product_name(p)).is_dir()]
+    missing = [p for p in operator_products(max_nder) if not (data / "cg_database" / product_name(p)).is_dir()]
     if missing:
         products = " ".join(f'"{",".join(str(irrep).replace(" ", "") for irrep in p)}"' for p in missing)
         raise SystemExit(
-            f"operators: CG products missing for max_n = {max_n}; compute them first with\n"
+            f"operators: CG products missing for max_nder = {max_nder}; compute them first with\n"
             f"  python scripts/regenerate_data.py cg --products {products}"
         )
 
-    log.info("operators: building the operator database up to max_n = %d", max_n)
+    log.info("operators: building the operator database up to max_nder = %d derivatives", max_nder)
     new = workdir / "operator_database"
     shutil.rmtree(new, ignore_errors=True)
-    make_operator_database(str(new), max_n=max_n, verbose=True, cg_database=str(data / "cg_database"))
+    make_operator_database(str(new), max_nder=max_nder, verbose=True, cg_database=str(data / "cg_database"))
     report_operator_changes(data / "operator_database", new)
     install(new, data / "operator_database")
 
@@ -337,7 +387,10 @@ def main(argv=None):
     )
     parser.add_argument("--jobs", type=int, default=1, help="CG products computed in parallel (default: 1)")
     parser.add_argument(
-        "--max-n", type=int, default=4, help="max_n of the operator database: V, A up to max_n indices (default: 4)"
+        "--max-nder",
+        type=int,
+        default=3,
+        help="operator database: the operators with 0 to MAX_NDER derivatives (default: 3)",
     )
     parser.add_argument(
         "--data-dir",
@@ -352,8 +405,8 @@ def main(argv=None):
         help="where the stages compute before installing (default: regenerated_data/)",
     )
     args = parser.parse_args(argv)
-    if args.jobs < 1 or args.max_n < 2:
-        parser.error("--jobs must be at least 1 and --max-n at least 2")
+    if args.jobs < 1 or args.max_nder < 0:
+        parser.error("--jobs must be at least 1 and --max-nder at least 0")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 
@@ -379,13 +432,14 @@ def main(argv=None):
             log.error("cg: failed: %s; rerun them with --products", ", ".join(product_name(p) for p in failed))
             return 1
     if "operators" in args.stages or "all" in args.stages:
-        regenerate_operators(data, workdir, args.max_n)
+        regenerate_operators(data, workdir, args.max_nder)
 
     log.info("done in %s", duration(time.time() - start))
     log.info("next: python -m pytest tests/test_cg_correctness.py, the full suite, then commit %s", data)
     if "operators" in args.stages or "all" in args.stages:
         # The default catalogue holds only the operators with up to two derivatives.
-        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue -X V A T --nder 1 2 3 -j")
+        nders = " ".join(str(d) for d in range(args.max_nder + 1))
+        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue --nder %s -j", nders)
     return 0
 
 

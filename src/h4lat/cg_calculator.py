@@ -520,7 +520,9 @@ class cg_calc:
         Parameters
         ----------
         *kwarg : tuple[int,int]
-            Irreps of H(4), e.g. (4,1), (4,4), (6,1), …
+            Irreps of H(4), e.g. (4,1), (4,4), (6,1), …  A single irrep is allowed: its
+            "product" is the irrep itself, whose CG matrix is the identity (the operators
+            without derivatives).
         cgdatabase : str or None
             Path to a CG-coefficient database, used for both reading and writing.
             If None (default), a product is read from the bundled database if it is
@@ -1255,6 +1257,8 @@ def print_CGmat(cgmat: np.ndarray, digits: int = 5) -> None:
 ######################## Execution of the program as Main ###################
 
 if __name__ == "__main__":
+    # python cg_calculator.py [n] [scalar|pseudoscalar|vector|axial|tensor|all]: compute (and print to
+    # PDF) the CG coefficients of the leading irrep of the chosen Dirac structure times n-1 (4,1) factors.
     n = 2
     if len(sys.argv) > 1:
         try:
@@ -1262,25 +1266,14 @@ if __name__ == "__main__":
         except ValueError:
             print(f"\nSpecified n was {sys.argv[1]}, proceeding with n={n}\n")
 
+    # irrep of the Dirac structure Γ of the operator ψ̄ Γ D … D ψ
+    leading_irreps = {"scalar": (1, 1), "pseudoscalar": (1, 4), "vector": (4, 1), "axial": (4, 4), "tensor": (6, 1)}
     which = "all"
     if len(sys.argv) > 2:
-        if str(sys.argv[2]) in ["vector", "axial", "tensor", "all"]:
+        if str(sys.argv[2]) in list(leading_irreps) + ["all"]:
             which = str(sys.argv[2])
 
-    chosen_irreps_vector = [(4, 1)]
-    chosen_irreps_axial = [(4, 4)]
-    chosen_irreps_tensor = [(6, 1)]
-    while len(chosen_irreps_vector) < n:
-        chosen_irreps_vector.append((4, 1))
-        chosen_irreps_axial.append((4, 1))
-        chosen_irreps_tensor.append((4, 1))
-
-    if which in ("all", "vector"):
-        cg_v = cg_calc(*chosen_irreps_vector, force_computation=True)
-        cg_v.latex_print()
-    if which in ("all", "axial"):
-        cg_a = cg_calc(*chosen_irreps_axial, force_computation=True)
-        cg_a.latex_print()
-    if which in ("all", "tensor"):
-        cg_t = cg_calc(*chosen_irreps_tensor, force_computation=True)
-        cg_t.latex_print()
+    for name, leading in leading_irreps.items():
+        if which in ("all", name):
+            cg = cg_calc(leading, *[(4, 1)] * (n - 1), force_computation=True)
+            cg.latex_print()

@@ -23,16 +23,22 @@ from h4lat import (
     OperatorDict_from_database,
     OperatorList_from_database,
     cg_calc,
+    cg_remapping,
+    cg_remapping_T,
     char_table,
     class_orders,
+    decomposition_analysis,
     get_multiplicities,
     get_op_selection,
     get_OperatorDict,
     get_OperatorList,
     get_paper_operators,
+    index_symm,
+    index_symm_index_fixed,
     irrep_dim,
     irrep_index,
     latex_print_multiplicities,
+    make_operator_database,
     n_ele_h4,
     n_rep,
     operator_show,
@@ -311,11 +317,11 @@ def test_catalogue_missing_database(tmp_path):
 
 
 def test_catalogue_selection_default():
-    """By default: V, A and T with one and two derivatives."""
+    """By default: every Dirac structure (S, P, V, A, T) with zero, one and two derivatives."""
     selection, title, name = _catalogue_selection()
-    assert selection == [("V", 1), ("V", 2), ("A", 1), ("A", 2), ("T", 1), ("T", 2)]
-    assert title == "Available Operators: X = V, A, T with 1, 2 derivatives"
-    assert name == "operator_catalogue_VAT_nder12"
+    assert selection == [(x, d) for x in "SPVAT" for d in (0, 1, 2)]
+    assert title == "Available Operators: X = S, P, V, A, T with 0, 1, 2 derivatives"
+    assert name == "operator_catalogue_SPVAT_nder012"
 
 
 @pytest.mark.parametrize(
@@ -327,6 +333,9 @@ def test_catalogue_selection_default():
             "operator_catalogue_V_nder123",
         ),
         (dict(X=["A"], nder=1), "Available Operators: X = A with 1 derivative", "operator_catalogue_A_nder1"),
+        # no derivatives; the structures are listed in the order S, P, V, A, T
+        (dict(keys="P0 s0"), "Available Operators: X = S, P with 0 derivatives", "operator_catalogue_SP_nder0"),
+        (dict(X="TV", nder=0), "Available Operators: X = V, T with 0 derivatives", "operator_catalogue_VT_nder0"),
         (
             dict(keys=["V2", "V3", "A3"]),
             "Available Operators: V with 2, 3 derivatives; A with 3 derivatives",
@@ -356,12 +365,12 @@ def test_catalogue_selection_titles_and_names(kwargs, title, name):
         dict(keys=["V2"], X="V"),  # keys cannot be combined with X / nder
         dict(keys=["V2"], nder=2),
         dict(keys=["Q2"]),  # unknown Dirac structure
-        dict(keys=["V0"]),  # at least one derivative
+        dict(keys=["V-1"]),  # a non-negative number of derivatives
         dict(keys=["V"]),  # no number of derivatives
         dict(keys=[]),
         dict(X="VZ"),
         dict(X=""),
-        dict(nder=0),
+        dict(nder=-1),
         dict(nder=[1, 2.5]),
         dict(nder=True),
     ],
@@ -392,7 +401,7 @@ def test_operator_show_writes_only_the_selection(monkeypatch, tmp_path):
     path, tex = _capture_catalogue(monkeypatch, tmp_path, keys=["V1"])
     # The V operators with one derivative, with their database IDs.
     assert path == Path("operator_catalogue_V_nder1.pdf")
-    assert _catalogue_ids(tex) == list(range(1, 17))
+    assert _catalogue_ids(tex) == list(range(25, 41))
     assert "Available Operators: X = V with 1 derivative" in tex
     assert "X=V, n=2 (1 derivative)" in tex
 
@@ -400,7 +409,7 @@ def test_operator_show_writes_only_the_selection(monkeypatch, tmp_path):
 def test_operator_show_keeps_the_database_order(monkeypatch, tmp_path):
     """Sections come in database order (increasing ID) whatever the order of the keys."""
     _, tex = _capture_catalogue(monkeypatch, tmp_path, keys=["T1", "A1"])
-    assert _catalogue_ids(tex) == list(range(17, 57))  # A1: 17-32, T1: 33-56
+    assert _catalogue_ids(tex) == list(range(41, 81))  # A1: 41-56, T1: 57-80
 
 
 def test_operator_show_in_parallel_gives_the_same_catalogue(monkeypatch, tmp_path):
@@ -413,7 +422,7 @@ def test_operator_show_missing_operators(monkeypatch, tmp_path):
     # Groups missing from the database are left out with a warning ...
     with pytest.warns(UserWarning, match="V4"):
         _, tex = _capture_catalogue(monkeypatch, tmp_path, keys=["V1", "V4"])
-    assert _catalogue_ids(tex) == list(range(1, 17))
+    assert _catalogue_ids(tex) == list(range(25, 41))
     # ... and if nothing is left, it is an error.
     with pytest.raises(ValueError, match="None of the selected operators"):
         _capture_catalogue(monkeypatch, tmp_path, keys=["V4"])
@@ -440,7 +449,7 @@ def test_operator_show_compiles_a_small_catalogue(monkeypatch, tmp_path):
 
 def test_parallel_kinematic_factors_match_the_serial_ones():
     """K computed in worker processes equals K computed on access."""
-    ids = [2, 41, 120, 287]
+    ids = [1, 26, 65, 176, 471]
     serial = [Operator_from_database(i) for i in ids]
     parallel = [Operator_from_database(i) for i in ids]
     _compute_kinematic_factors(serial, n_jobs=1, verbose=False)
@@ -499,16 +508,17 @@ def test_get_OperatorList_operator_attributes():
     """Every operator returned by get_OperatorList() must have well-formed attributes."""
     ops = get_OperatorList()
     for op in ops:
-        # Dirac structure must be one of the three supported types.
-        assert op.X in ('V', 'A', 'T'), f"Unexpected X={op.X!r} for operator {op.id}"
+        # Dirac structure must be one of the five supported types.
+        assert op.X in ('S', 'P', 'V', 'A', 'T'), f"Unexpected X={op.X!r} for operator {op.id}"
         # irrep must be a 2-tuple of positive integers.
         assert isinstance(op.irrep, tuple) and len(op.irrep) == 2
         assert all(isinstance(k, int) and k >= 1 for k in op.irrep)
         # Block and column indices are 1-based positive integers.
         assert isinstance(op.block, int) and op.block >= 1
         assert isinstance(op.index_block, int) and op.index_block >= 1
-        # n is at least 2 (one Dirac index plus at least one derivative index).
-        assert op.n >= 2
+        # n counts the indices of the Dirac structure (0 for S/P, 1 for V/A, 2 for T) and of the derivatives.
+        assert op.n == op.nder + {'S': 0, 'P': 0, 'V': 1, 'A': 1, 'T': 2}[op.X]
+        assert op.nder >= 0
 
 
 def test_bundled_operators_have_definite_c_parity():
@@ -721,9 +731,9 @@ def test_get_OperatorDict_key_structure():
     d = get_OperatorDict()
     for key in d:
         n, X = key
-        # n is the total number of Lorentz indices (≥ 2 for physical operators).
-        assert isinstance(n, int) and n >= 2, f"Unexpected n={n} in key {key}"
-        assert X in ('V', 'A', 'T'), f"Unexpected X={X!r} in key {key}"
+        # n is the total number of Lorentz indices (0 for ψ̄ψ and ψ̄γ₅ψ).
+        assert isinstance(n, int) and n >= 0, f"Unexpected n={n} in key {key}"
+        assert X in ('S', 'P', 'V', 'A', 'T'), f"Unexpected X={X!r} in key {key}"
 
 
 def test_get_OperatorDict_matches_OperatorDict_from_database():
@@ -760,29 +770,181 @@ def test_get_OperatorDict_in_public_api():
 
 
 def test_bundled_operator_database_covers_three_derivatives():
-    """V, A and T operators with up to three derivatives, one per basis vector of each product, IDs 1-1176."""
+    """S, P, V, A and T operators with 0 to 3 derivatives, one per basis vector of each product, IDs 1-1360."""
     d = get_OperatorDict()
     counts = {key: sum(len(ops) for ops in group.values()) for key, group in d.items()}
-    assert counts == {
-        (2, 'V'): 16,
-        (2, 'A'): 16,
-        (3, 'T'): 24,
-        (3, 'V'): 64,
-        (3, 'A'): 64,
-        (4, 'T'): 96,
-        (4, 'V'): 256,
-        (4, 'A'): 256,
-        (5, 'T'): 384,
-    }
+    # keys (n, X), with n = nder for S/P, nder + 1 for V/A, nder + 2 for T, in database order
+    # fmt: off
+    assert list(counts.items()) == [
+        ((0, 'S'), 1), ((0, 'P'), 1), ((1, 'V'), 4), ((1, 'A'), 4), ((2, 'T'), 6),
+        ((1, 'S'), 4), ((1, 'P'), 4), ((2, 'V'), 16), ((2, 'A'), 16), ((3, 'T'), 24),
+        ((2, 'S'), 16), ((2, 'P'), 16), ((3, 'V'), 64), ((3, 'A'), 64), ((4, 'T'), 96),
+        ((3, 'S'), 64), ((3, 'P'), 64), ((4, 'V'), 256), ((4, 'A'), 256), ((5, 'T'), 384),
+    ]
+    # fmt: on
     ids = sorted(op.id for group in d.values() for ops in group.values() for op in ops)
-    assert ids == list(range(1, 1177))
+    assert ids == list(range(1, 1361))
+
+
+def test_bundled_operator_ids_are_ordered_by_derivatives_then_dirac_structure():
+    """IDs run over the number of derivatives 0, 1, 2, 3 and, for each, over X = S, P, V, A, T."""
+    ops = get_OperatorList()
+    keys = [(op.nder, "SPVAT".index(op.X)) for op in ops]
+    assert keys == sorted(keys)
+    # first ID of each group: 16 · 4^nder operators per number of derivatives
+    first = {}
+    for op in ops:
+        first.setdefault(f"{op.X}{op.nder}", op.id)
+    # fmt: off
+    assert first == {
+        "S0": 1, "P0": 2, "V0": 3, "A0": 7, "T0": 11,
+        "S1": 17, "P1": 21, "V1": 25, "A1": 41, "T1": 57,
+        "S2": 81, "P2": 97, "V2": 113, "A2": 177, "T2": 241,
+        "S3": 337, "P3": 401, "V3": 465, "A3": 721, "T3": 977,
+    }
+    # fmt: on
+
+
+def test_local_bilinears():
+    """The operators without derivatives ψ̄ Γ ψ: their cgmat, C-parity and tree-level kinematic factor."""
+    ops = get_OperatorList(nder=0)
+    assert [op.id for op in ops] == list(range(1, 17))
+    assert [op.X for op in ops] == ["S", "P"] + ["V"] * 4 + ["A"] * 4 + ["T"] * 6
+    S, P, V, A, T = ops[0], ops[1], ops[2:6], ops[6:10], ops[10:]
+    # ψ̄ψ and ψ̄γ₅ψ carry no Lorentz index: a 0-index cgmat
+    for op in (S, P):
+        assert op.cgmat.shape == () and op.cgmat == 1 and op.n == 0
+    assert S.latex_O == "O^{S}" and P.latex_O == "O^{P}"
+    # γ_μ, γ_μγ₅: one component per μ; σ_μν: one component per pair μ < ν (12, 13, 23, 14, 24, 34)
+    for group in (V, A):
+        assert np.array_equal(np.array([op.cgmat for op in group]), np.eye(4))
+    pairs = [(0, 1), (0, 2), (1, 2), (0, 3), (1, 3), (2, 3)]
+    for op, (mu, nu) in zip(T, pairs):
+        expected = np.zeros((4, 4))
+        expected[mu, nu] = 1
+        assert np.array_equal(op.cgmat, expected)
+    # C-parity of the local bilinears: + for 𝟙, γ₅, γ_μγ₅; - for γ_μ, σ_μν
+    assert [op.C for op in ops] == [1, 1] + [-1] * 4 + [1] * 4 + [-1] * 6
+    # nothing to permute: (vacuously) symmetric; no trace
+    assert all(op.symm == "Symmetric" and op.tr == "= 0" for op in ops)
+    # forward matrix elements: ū u = 2m (K = m/E), ū γ₅ u = 0, ū γ_μ u = 2 p_μ (K = -i p_μ / E, the charge K = 1)
+    assert S.K == mN / E
+    assert P.K == 0
+    p = [p1, p2, p3, I * E]
+    assert [sym.simplify(op.K + I * p_mu / E) for op, p_mu in zip(V, p)] == [0] * 4
+    assert V[3].K == 1
+
+
+def test_operators_with_derivatives_of_S_and_P():
+    """S and P with derivatives: n = nder indices, all of them derivatives, and C = (-1)^nder."""
+    for X in "SP":
+        for nder in (1, 2, 3):
+            ops = get_OperatorList(X=X, nder=nder)
+            assert len(ops) == 4**nder
+            assert all(op.n == nder and op.cgmat.shape == (4,) * nder for op in ops)
+            assert all(op.C == (-1) ** nder for op in ops if op.symm == "Symmetric"), (X, nder)
+            assert all(op.C in (1, -1) for op in ops)
+    # with one derivative there is one index: ψ̄ D_μ ψ in the irrep (4,1), ψ̄ γ₅ D_μ ψ in (4,4)
+    assert {op.irrep for op in get_OperatorList(keys="S1")} == {(4, 1)}
+    assert {op.irrep for op in get_OperatorList(keys="P1")} == {(4, 4)}
+
+
+def test_operator_getters_select_by_dirac_structure_and_derivatives():
+    """get_OperatorList / get_OperatorDict select operators with X, nder or keys, as operator_show."""
+    assert [op.id for op in get_OperatorList(X="S", nder=2)] == list(range(81, 97))
+    assert [op.id for op in get_OperatorList(keys="V0 A0")] == list(range(3, 11))
+    assert [op.id for op in get_OperatorList(X="SP", nder=[0, 1])] == [1, 2] + list(range(17, 25))
+    assert len(get_OperatorList(X="T")) == 6 + 24 + 96 + 384
+    assert len(get_OperatorList(nder=3)) == 1024
+    assert list(get_OperatorDict(X="S", nder=2)) == [(2, "S")]
+    # σ_μν without derivatives and γ_μ D_ν both have n = 2 indices; T0 (IDs 11-16) comes first
+    assert list(get_OperatorDict(keys=["T0", "V1"])) == [(2, "T"), (2, "V")]
+    assert OperatorList_from_database(OPERATOR_DATABASE, X="P", nder=0)[0].id == 2
+    for kwargs in (dict(keys="V1", X="V"), dict(X="Q"), dict(nder=-1), dict(keys="V")):
+        with pytest.raises(ValueError):
+            get_OperatorList(**kwargs)
+
+
+def test_make_operator_database_reproduces_the_bundled_database(tmp_path):
+    """make_operator_database(folder, max_nder) writes the first operators of the bundled database, file by file."""
+    folder = tmp_path / "operators"
+    make_operator_database(str(folder), max_nder=1)
+    bundled = {f.name: f for f in Path(OPERATOR_DATABASE).glob("*.npy")}
+    written = sorted(folder.glob("*.npy"), key=lambda f: int(f.name.split("_")[1]))
+    assert [int(f.name.split("_")[1]) for f in written] == list(range(1, 81))
+    for f in written:
+        assert f.name in bundled
+        assert np.array_equal(np.load(f), np.load(bundled[f.name])), f.name
+    # a second database in the same folder would mix two sets of IDs
+    with pytest.raises(FileExistsError):
+        make_operator_database(str(folder), max_nder=0)
+    for max_nder in (-1, 1.5, True):
+        with pytest.raises(ValueError, match="max_nder"):
+            make_operator_database(str(tmp_path / "other"), max_nder=max_nder)
+
+
+def test_cg_remapping():
+    """A CG column is the C-order flattening of the cgmat; σ_μν is stored for μ < ν only."""
+    assert cg_remapping(np.array([2.0]), 0).shape == ()
+    assert cg_remapping(np.array([2.0]), 0) == 2
+    assert np.array_equal(cg_remapping(np.arange(4.0), 1), np.arange(4.0))
+    two = cg_remapping(np.arange(16.0), 2)
+    assert all(two[i, j] == 4 * i + j for i in range(4) for j in range(4))
+    pairs = [(0, 1), (0, 2), (1, 2), (0, 3), (1, 3), (2, 3)]
+    sigma = cg_remapping_T(np.arange(1.0, 7.0), 1)  # σ_μν without derivatives
+    expected = np.zeros((4, 4))
+    for k, (mu, nu) in enumerate(pairs):
+        expected[mu, nu] = k + 1
+    assert np.array_equal(sigma, expected)
+    sigma_D = cg_remapping_T(np.arange(24.0), 2)  # σ_μν D_ρ
+    assert all(sigma_D[mu, nu, rho] == 4 * k + rho for k, (mu, nu) in enumerate(pairs) for rho in range(4))
+    assert np.count_nonzero(sigma_D) == 23  # every entry with μ < ν but the one equal to 0
+
+
+def test_index_symmetry_without_indices_to_permute():
+    """With fewer than two indices to permute, the symmetry is (vacuously) 'Symmetric'."""
+    assert index_symm(np.array(1.0)) == "Symmetric"
+    assert index_symm(np.array([1.0, 0, 0, 0])) == "Symmetric"
+    assert index_symm_index_fixed(np.eye(4), 0) == "Symmetric"
+    # with two indices nothing changes
+    assert index_symm(np.eye(4)) == "Symmetric"
+    assert index_symm(np.triu(np.ones((4, 4)), 1)) == "Mixed Symmetry"
+
+
+def test_operator_without_indices_arithmetic_and_hdf5(tmp_path):
+    """An operator with a 0-index cgmat supports the operator arithmetic and the HDF5 round trip."""
+    S = Operator_from_database(1)
+    combined = 2 * S + S - S / 2
+    assert combined.cgmat.shape == () and combined.cgmat == 2.5
+    assert (combined.X, combined.n, combined.C) == ("S", 0, 1)
+    assert sym.simplify(combined.K - sym.Rational(5, 2) * mN / E) == 0
+    pytest.importorskip("h5py")
+    from h4lat import h5_to_operator_list, operator_list_to_h5
+
+    ops = get_OperatorList(nder=0)
+    operator_list_to_h5(ops, str(tmp_path / "local.h5"))
+    reloaded = h5_to_operator_list(str(tmp_path / "local.h5"))
+    for op, op_r in zip(ops, reloaded):
+        assert (op_r.id, op_r.X, op_r.irrep, op_r.n) == (op.id, op.X, op.irrep, op.n)
+        assert op_r.cgmat.shape == op.cgmat.shape and np.array_equal(op_r.cgmat, op.cgmat)
+
+
+def test_decomposition_analysis_with_zero_and_one_derivative():
+    """Without derivatives the product is the irrep of X alone, mixing-safe; ψ̄ D_μ ψ can mix with ψ̄ γ_μ ψ."""
+    pytest.importorskip("pandas")
+    df = decomposition_analysis("V", 0, operator_dict=get_OperatorDict(nder=0))
+    assert df.values.tolist() == [[(4, 1), "Y", 1, "S"]]
+    df = decomposition_analysis("S", 1)
+    assert df.values.tolist() == [[(4, 1), "N", 1]]
+    with pytest.raises(ValueError, match="n_der"):
+        decomposition_analysis("S", -1)
 
 
 def test_operator_symbolic_attributes_are_computed_on_access():
     """O, K and their LaTeX forms are computed on first access; set_polarization_matrix resets K."""
     from h4lat.moments_operator import Kfactor_from_diracO, Operator_from_database, diracO_from_cgmat
 
-    op = Operator_from_database(1)
+    op = Operator_from_database(25)
     assert not {"O", "K", "latex_O", "latex_K", "p3corr_is_real"} & set(op.__dict__)
     assert op.K == Kfactor_from_diracO(diracO_from_cgmat(op.cgmat, op.X), 0)
     latex_K = op.latex_K
@@ -823,7 +985,7 @@ def test_polarisation_projectors_are_exact():
     assert not any(entry.atoms(sym.Float) for projector in Gamma_pol_list for entry in projector)
 
 
-@pytest.mark.parametrize("operator_id", [120, 340, 343, 557, 560])
+@pytest.mark.parametrize("operator_id", [176, 524, 527, 741, 744])
 def test_kinematic_factors_that_vanish_are_exactly_zero(operator_id):
     """With the float CG coefficients these K came out as ~1e-16, e.g. -7105427357601 i p1 p2 p3 / (8·10²⁷ E)."""
     op = Operator_from_database(operator_id)
@@ -834,9 +996,9 @@ def test_kinematic_factors_that_vanish_are_exactly_zero(operator_id):
 def test_known_kinematic_factors():
     """K of a few operators (V with 1 and 3 derivatives, T with 1): the same as before exact arithmetic."""
     expected = {
-        2: I * (-3 * mN**2 - 4 * p1**2 - 4 * p2**2 - 4 * p3**2) / E,
-        41: -3 * p2 * (E * mN + mN**2 + p1**2 + p2**2) / (2 * E * (E + mN)),
-        287: 2
+        26: I * (-3 * mN**2 - 4 * p1**2 - 4 * p2**2 - 4 * p3**2) / E,
+        65: -3 * p2 * (E * mN + mN**2 + p1**2 + p2**2) / (2 * E * (E + mN)),
+        471: 2
         * I
         * (
             -(mN**2) * p1**2
@@ -857,12 +1019,12 @@ def test_known_kinematic_factors():
         assert not op.K.atoms(sym.Float)
     # the operator expression is printed as before (only non-zero coefficients are summed)
     assert (
-        Operator_from_database(41).latex_O == r"O^{T}_{1, 2, 2}-\frac{1}{2}O^{T}_{1, 3, 3}-\frac{1}{2}O^{T}_{1, 4, 4}"
+        Operator_from_database(65).latex_O == r"O^{T}_{1, 2, 2}-\frac{1}{2}O^{T}_{1, 3, 3}-\frac{1}{2}O^{T}_{1, 4, 4}"
     )
 
 
 def test_latex_K_with_square_roots():
-    """Exact square roots in K (here 1/√2 · operator 14) are written as LaTeX roots."""
+    """Exact square roots in K (here 1/√2 · operator 38) are written as LaTeX roots."""
     op = get_op_selection(1)[2]
     assert op.K == sym.sqrt(2) * p1
     assert op.latex_K == r"\sqrt{2}p_1"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "h4lat"
-version = "0.1.0"
+version = "0.2.0"
 description = "Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)"
 readme = "README.md"
 license = { file = "LICENSE" }

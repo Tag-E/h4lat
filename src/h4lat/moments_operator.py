@@ -48,7 +48,7 @@ import subprocess
 import sys
 import time
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from fractions import Fraction
 from pathlib import Path
@@ -122,6 +122,21 @@ from .kinematic_data import (
 )
 from .utilities import all_equal, parity
 
+# Dirac structures, in the order in which make_operator_database numbers them for each
+# number of derivatives (and in which catalogue titles and file names list them).
+_X_ORDER = ('S', 'P', 'V', 'A', 'T')
+
+# H(4) irrep of the Dirac structure Γ of ψ̄ Γ D … D ψ: the first factor of the tensor product
+# of an operator, followed by one fundamental (4,1) factor per derivative.
+_DIRAC_IRREP = {'S': (1, 1), 'P': (1, 4), 'V': (4, 1), 'A': (4, 4), 'T': (6, 1)}
+
+# Number of Lorentz indices carried by each Dirac structure: none for 𝟙 and γ₅, one for γ_μ
+# and γ_μ γ₅, two for σ_{μν}.
+_DIRAC_N_INDICES = {'S': 0, 'P': 0, 'V': 1, 'A': 1, 'T': 2}
+
+# C-parity η_X of the local bilinear ψ̄ Γ^X ψ (see C_parity).
+_C_PARITY_BILINEAR = {'S': 1, 'P': 1, 'V': -1, 'A': 1, 'T': -1}
+
 
 def _n_der(n: int, X: str) -> int:
     """Number of derivatives of an operator with *n* Lorentz indices and Dirac structure *X*.
@@ -129,11 +144,32 @@ def _n_der(n: int, X: str) -> int:
     The Dirac structure takes 0 indices for S/P, 1 for V/A (γ_μ) and 2 for T (σ_{μν});
     every other index belongs to a derivative.
     """
-    if X in ('S', 'P'):
-        return n
-    if X == 'T':
-        return n - 2
-    return n - 1  # V, A
+    return n - _DIRAC_N_INDICES[X]
+
+
+def _n_indices(nder: int, X: str) -> int:
+    """Number of Lorentz indices of an operator with *nder* derivatives and Dirac structure *X* (inverse of _n_der)."""
+    return nder + _DIRAC_N_INDICES[X]
+
+
+def _operator_irreps(X: str, nder: int) -> tuple[tuple[int, int], ...]:
+    """Tensor product of H(4) irreps of the operators ψ̄ Γ^X D_{μ₁} … D_{μ_nder} ψ.
+
+    The irrep of the Dirac structure (see _DIRAC_IRREP) followed by one (4,1) per derivative,
+    e.g. ``((1, 1),)`` for ψ̄ψ and ``((6, 1), (4, 1), (4, 1))`` for σ_{μν} with two derivatives.
+    """
+    return (_DIRAC_IRREP[X],) + ((4, 1),) * nder
+
+
+def _nonzero_indices(cgmat: np.ndarray) -> list[tuple[int, ...]]:
+    """Multi-indices of the non-zero entries of *cgmat*, in C order.
+
+    Unlike np.nonzero this also works for a 0-index cgmat (an operator without Lorentz
+    indices, such as ψ̄ψ), whose only entry has the empty multi-index ().
+    """
+    if cgmat.ndim == 0:
+        return [()] if cgmat != 0 else []
+    return [tuple(int(i) for i in indices) for indices in zip(*np.nonzero(cgmat))]
 
 
 ######################## Main Class #####################################
@@ -145,9 +181,12 @@ class Operator:
     Clebsch-Gordan coefficient tensor and Dirac structure.
 
     The ``cgmat`` is an n-index NumPy array of shape (4,)×n, where n is the
-    total number of Lorentz indices (one for the Dirac structure plus one per
-    derivative).  Each entry c_{i₁…iₙ} is the CG coefficient that selects the
-    appropriate linear combination of elementary tensors.
+    total number of Lorentz indices: those of the Dirac structure (none for S
+    and P, one for V and A, two for T) plus one per derivative.  Each entry
+    c_{i₁…iₙ} is the CG coefficient that selects the appropriate linear
+    combination of elementary tensors.  An operator without Lorentz indices
+    (ψ̄ψ or ψ̄γ₅ψ) has a 0-index cgmat, of shape ().  The number of derivatives
+    is ``nder``.
 
     On construction the class computes:
     * ``C``  — C-parity (+1, -1, or 'mixed').
@@ -180,7 +219,8 @@ class Operator:
         Parameters
         ----------
         cgmat : ndarray, shape (4,)*n
-            CG coefficient tensor in the remapped form (see ``cg_remapping``).
+            CG coefficient tensor in the remapped form (see ``cg_remapping``);
+            of shape () for an operator without Lorentz indices.
         id : int, str or None
             Operator identifier (used in filenames and catalogues).  None for an
             operator built by ``+`` or ``-``, which has no database id.
@@ -209,7 +249,10 @@ class Operator:
         """
         if not 0 <= gamma_pol_index <= 5:
             raise ValueError(f"gamma_pol_index must be 0–5, got {gamma_pol_index}.")
-        self.cgmat = cgmat[:]
+        # An array also for a 0-index cgmat, which arithmetic on operators may turn into a
+        # NumPy scalar; [...] keeps the view semantics of the former cgmat[:], which fails for it.
+        cgmat = np.asarray(cgmat)
+        self.cgmat = cgmat[...]
         self.id = id
         self.X = X
         self.irrep = irrep
@@ -564,6 +607,7 @@ def symO_from_Cgmat(cgmat: np.ndarray) -> sym.core.add.Add:
     Parameters
     ----------
     cgmat : ndarray, shape (4,)*n
+        For n = 0 (no Lorentz indices) the expression is c · O[], with O of shape ().
 
     Returns
     -------
@@ -575,9 +619,9 @@ def symO_from_Cgmat(cgmat: np.ndarray) -> sym.core.add.Add:
     # Only the non-zero coefficients contribute: skipping the zeros gives the same
     # expression, but is much faster for many indices (a T operator with three
     # derivatives has 4⁵ = 1024 entries, almost all of them zero).
-    for indices in zip(*np.nonzero(cgmat)):
+    for indices in _nonzero_indices(cgmat):
         # Shift indices to the 1-based (1,2,3,4) convention used in publications.
-        shifted_indices = [int(i) + 1 for i in indices]
+        shifted_indices = [i + 1 for i in indices]
         operator_symbol += cgmat[indices] * O[shifted_indices]
     return operator_symbol
 
@@ -673,8 +717,7 @@ def diracO_from_cgmat(cgmat: np.ndarray, X: str) -> sym.core.add.Add:
     # turn every exact coefficient added to them back into a float.
     op = sym.zeros(4, 4)
     # Only the non-zero coefficients contribute (most of the 4ⁿ entries are zero).
-    for indices in zip(*np.nonzero(cgmat)):
-        indices = tuple(int(i) for i in indices)
+    for indices in _nonzero_indices(cgmat):
         if X == 'V':
             gamma_prod = gamma_mu[indices[0]]
             start_ind = 1
@@ -800,13 +843,18 @@ def trace_symm(cgmat: np.ndarray, X: str) -> str:
 def C_parity(cgmat: np.ndarray, X: str) -> int | str:
     """Return the C-parity of the operator: +1, -1, or ``'mixed'``.
 
-    Charge conjugation acts on a moments operator as
+    Charge conjugation acts on a moments operator ψ̄ Γ^X_{μ…} D_{ν₁} … D_{ν_k} ψ
+    with k derivatives as
 
-        C O^X_{μ₁…μₙ} C⁻¹ = (−1)^{n + δ_X} O^X_{μ₁ μₙ … μ₂}
+        C O^X_{μ… ν₁…ν_k} C⁻¹ = η_X (−1)^k O^X_{μ… ν_k … ν₁}
 
-    where δ_X = 0 for V and S, and δ_X = 1 for A, T and P.  We identify
-    C-parity by comparing the original cgmat with the one obtained by
-    reversing the derivative indices.
+    where μ… are the indices of Γ^X (none for S and P, μ for V and A, μν for T):
+    it reverses the derivative indices and leaves those of Γ^X where they are.
+    η_X is the C-parity of the local bilinear ψ̄ Γ^X ψ: +1 for S (𝟙), P (γ₅)
+    and A (γ_μ γ₅), −1 for V (γ_μ) and T (σ_{μν}); each derivative D, acting to
+    the left minus to the right, adds a factor −1.  We identify the C-parity by
+    comparing the original cgmat with the one obtained by reversing the
+    derivative indices.
 
     Parameters
     ----------
@@ -842,13 +890,8 @@ def C_parity(cgmat: np.ndarray, X: str) -> int | str:
     else:
         return "mixed"
 
-    # Include the overall sign factor (−1)^{n + δ_X}.
-    # δ = 0 for V, S;  δ = 1 for A, T, P.
-    if X in ("V", "S"):
-        Cp *= (-1) ** n
-    elif X in ("A", "T", "P"):
-        Cp *= (-1) ** (n + 1)
-    return Cp
+    # Include the overall sign η_X (−1)^{number of derivatives}.
+    return Cp * _C_PARITY_BILINEAR[X] * (-1) ** _n_der(n, X)
 
 
 def index_symm(cgmat: np.ndarray) -> str:
@@ -866,9 +909,13 @@ def index_symm(cgmat: np.ndarray) -> str:
     Returns
     -------
     str
-        ``'Symmetric'``, ``'Antisymmetric'``, or ``'Mixed Symmetry'``.
+        ``'Symmetric'``, ``'Antisymmetric'``, or ``'Mixed Symmetry'``.  A tensor
+        with fewer than two indices has no index to permute and is (vacuously)
+        ``'Symmetric'``.
     """
     n = cgmat.ndim
+    if n < 2:
+        return "Symmetric"
     symm_old = None
     symm_new = "Mixed Symmetry"
     for ip, p in enumerate(it.permutations(range(n))):
@@ -935,9 +982,14 @@ def index_symm_index_fixed(cgmat: np.ndarray, *kwargs: int) -> str:
     Returns
     -------
     str
+        ``'Symmetric'``, ``'Antisymmetric'``, or ``'Mixed Symmetry'``.  With fewer
+        than two indices left free there is nothing to permute, and the result is
+        (vacuously) ``'Symmetric'``.
     """
     n = cgmat.ndim
     fixed_indices = kwargs
+    if n - len(set(fixed_indices)) < 2:
+        return "Symmetric"
     symm_old = None
     symm_new = "Mixed Symmetry"
     for ip, p in enumerate(it.permutations(range(n))):
@@ -971,147 +1023,139 @@ def cg_remapping(raw_cg: np.ndarray, n: int) -> np.ndarray:
     ----------
     raw_cg : ndarray, shape (4**n,)
     n : int
-        Number of Lorentz indices (= number of tensor-product factors).
+        Number of Lorentz indices (= number of 4-dimensional tensor-product factors).
+        n = 0 gives a 0-index tensor, of shape (), from a column of length 1: the
+        CG coefficient of an operator without Lorentz indices (S or P without
+        derivatives).
 
     Returns
     -------
     ndarray, shape (4,)*n
     """
-    cg_remapped = np.zeros(shape=(4,) * n)
-    # Build the mapping from flat index i to multi-index (i₁, …, iₙ) using base-4
-    # arithmetic.  The +1 offset converts from 0-based to 1-based digits, which
-    # then get shifted back by -1 to give the correct 0-based multi-index.
-    mapping = (
-        np.asarray([tuple(j) for j in [str(int(np.base_repr(i, 4)) + int('1' * n)) for i in range(4**n)]], dtype=int)
-        - 1
-    )
-    for i in range(4**n):
-        cg_remapped[tuple(mapping[i])] = raw_cg[i]
-    return cg_remapped
+    # The composite index i = Σ_k i_k 4^(n-1-k) is the C-order (row-major) flattening of
+    # (i₁, …, iₙ), so the tensor is a reshape of the column (a copy, as a float array).
+    return np.array(raw_cg, dtype=float).reshape((4,) * n)
+
+
+# Pairs of axes (μ, ν), μ < ν, of the 6 components of the (6,1) irrep, in the order of its
+# matrix representation in cg_calculator (12, 13, 23, 14, 24, 34), 0-based.
+_SIGMA_PAIRS = ((0, 1), (0, 2), (1, 2), (0, 3), (1, 3), (2, 3))
 
 
 def cg_remapping_T(raw_cg: np.ndarray, n: int) -> np.ndarray:
-    """Reshape a tensorial CG column of length 6·4^(n−2) into an (n+1)-index tensor.
+    """Reshape a tensorial CG column of length 6·4^(n−1) into an (n+1)-index tensor.
 
-    For tensorial operators the first two Lorentz indices are antisymmetric,
-    so the CG database stores only the 6 independent combinations
-    {12, 13, 23, 14, 24, 34} rather than all 16.  This function expands them
-    back into the full (4,4) antisymmetric pair.
+    For tensorial operators the first two Lorentz indices are those of σ_{μν},
+    which is antisymmetric, so the CG database stores only the 6 independent
+    combinations {12, 13, 23, 14, 24, 34} rather than all 16.  Each is written to
+    the entries with μ < ν; the entries with μ ≥ ν are zero (the antisymmetry is
+    left implicit, see e.g. ``trace_symm``).
 
     Parameters
     ----------
-    raw_cg : ndarray, shape (6 * 4**(n-2),)
+    raw_cg : ndarray, shape (6 * 4**(n-1),)
         Flattened CG column for a tensorial (T) operator with n−1 derivatives.
     n : int
         Number of derivative indices +1 (= number of tensor-product factors)
         (the tensor accounts for two Dirac indices, so the full cgmat will have shape (4,)*(n+1)).
+        n = 1 is σ_{μν} without derivatives, from a column of length 6.
 
     Returns
     -------
     ndarray, shape (4,)*(n+1)
     """
+    # Row-major flattening of (component of σ, derivative indices), as in cg_remapping.
+    components = np.asarray(raw_cg, dtype=float).reshape((6,) + (4,) * (n - 1))
     cg_remapped = np.zeros(shape=(4,) * (n + 1))
-    # The order of the 6 independent combinations is fixed by the
-    # choice of matrix representation for the irrep (6,1) of H(4)
-    for k, ij in enumerate(["12", "13", "23", "14", "24", "34"]):
-        i = int(ij[0]) - 1
-        j = int(ij[1]) - 1
-        mapping = (
-            np.asarray(
-                [tuple(l) for l in [str(int(np.base_repr(p, 4)) + int('1' * (n - 1))) for p in range(4 ** (n - 1))]],
-                dtype=int,
-            )
-            - 1
-        )
-        for sub_i in range(4 ** (n - 1)):
-            cg_remapped[tuple(np.concatenate([np.array([i, j]), mapping[sub_i]]))] = raw_cg[4 ** (n - 1) * k + sub_i]
+    for k, (mu, nu) in enumerate(_SIGMA_PAIRS):
+        cg_remapped[mu, nu] = components[k]
     return cg_remapped
+
+
+def _cgmat_from_column(column: np.ndarray, X: str, nder: int) -> np.ndarray:
+    """The cgmat of the operator given by one column of a CG block of the product _operator_irreps(X, nder).
+
+    S and P have a 1-dimensional leading irrep, which carries no Lorentz index: only the
+    *nder* derivative indices are remapped.  V and A have one more index (that of γ_μ),
+    T two (σ_{μν}, see cg_remapping_T).
+    """
+    if X in ('S', 'P'):
+        return cg_remapping(column, nder)
+    if X in ('V', 'A'):
+        return cg_remapping(column, nder + 1)
+    return cg_remapping_T(column, nder + 1)  # T
 
 
 def make_operator_database(
     operator_folder: str,
-    max_n: int,
+    max_nder: int,
     verbose: bool = False,
     cg_database: str | None = None,
-    include_SP: bool = False,
 ) -> None:
-    """Build a database of H(4)-irreducible lattice operators up to *max_n* indices.
+    """Build the database of H(4)-irreducible lattice operators with up to *max_nder* derivatives.
 
-    For each combination of structure X and index count n, the function loads
-    the relevant CG matrices from the database, loops over all irreps and
-    multiplicity blocks, and saves each resulting operator to a .npy file
-    whose filename encodes the full operator metadata.
+    The database holds the operators ψ̄ Γ^X D_{μ₁} … D_{μ_k} ψ of every Dirac structure
+    X = S (𝟙), P (γ₅), V (γ_μ), A (γ_μ γ₅), T (σ_{μν}) and every number of derivatives
+    k = 0, 1, …, *max_nder*: one operator per column of every CG block of the tensor
+    product irrep(X) ⊗ (4,1)^k.  Each operator is saved to a .npy file whose filename
+    encodes its metadata (see ``Operator.save``).
+
+    The operators are numbered from 1, by increasing number of derivatives and, for each,
+    in the order S, P, V, A, T; within a Dirac structure they follow the order of the
+    irreps (as in ``rep_label_list``), of the copies of an irrep and of the components
+    of a copy.  The bundled database is ``make_operator_database(folder, max_nder=3)``.
 
     Parameters
     ----------
     operator_folder : str
-        Directory where operator .npy files will be written.
-    max_n : int
-        Maximum number of indices for V and A operators.  T operators
-        automatically get one extra index (σ_{μν} contributes two).
-        For S and P (when *include_SP* is True) this is the maximum number
-        of derivative indices.
+        Directory where the operator .npy files are written (created if absent).  It must
+        not already hold operator files: those of another database, possibly numbered
+        differently, would be mixed with the new ones.
+    max_nder : int
+        Maximum number of derivatives (≥ 0).  The CG coefficients are bundled up to three
+        derivatives; the products of more irreps are computed by ``cg_calc`` (into
+        ./cg_database or *cg_database*), which for four derivatives takes a lot of memory.
     verbose : bool
         Print progress messages.
     cg_database : str or None
         Path to the CG-coefficient database.  ``None`` → use the bundled data.
-    include_SP : bool
-        When ``True``, also generate scalar (S, Γ = 𝟙) and pseudoscalar
-        (P, Γ = γ₅) operators in addition to the default V, A, T set.
-        Defaults to ``False``.
+
+    Raises
+    ------
+    ValueError
+        If *max_nder* is not a non-negative integer.
+    FileExistsError
+        If *operator_folder* already holds operator files.
     """
-    if max_n < 2:
-        raise ValueError("max_n must be at least 2.")
+    if isinstance(max_nder, bool) or not isinstance(max_nder, (int, np.integer)) or max_nder < 0:
+        raise ValueError(f"max_nder must be a non-negative integer, got {max_nder!r}.")
+    if any(Path(operator_folder).glob("operator_*.npy")):
+        raise FileExistsError(
+            f"{operator_folder} already holds operator files: write the database to an empty or new folder."
+        )
     Path(operator_folder).mkdir(parents=True, exist_ok=True)
 
-    X_list = ['V', 'A', 'T', 'S', 'P'] if include_SP else ['V', 'A', 'T']
-    n_list = list(range(2, max_n + 1))
+    kwargs: dict = dict(verbose=False, force_computation=False)
+    if cg_database is not None:
+        kwargs['cgdatabase'] = cg_database
+
     iop = 1  # global operator counter (1-based, matches the printed catalogue)
-
-    for n in n_list:
+    for nder in range(max_nder + 1):
         if verbose:
-            label = f"V{n}, A{n}, T{n+1}, S{n-1}, P{n-1}" if include_SP else f"V{n}, A{n}, T{n+1}"
-            print(f"\nConstructing operators {label}...\n")
+            print(f"\nConstructing the operators with {nder} derivative{'s' if nder != 1 else ''} ...\n")
 
-        for X in tqdm(X_list, disable=not verbose):
-            # The first irrep encodes the Dirac structure; all derivative
-            # indices transform in the fundamental (4,1) representation.
-            # S and P have a 1-dimensional leading irrep, so their cgmat has
-            # one fewer index than the chosen_irreps list.
-            chosen_irreps = []
-            if X == 'V':
-                chosen_irreps.append((4, 1))
-            elif X == 'A':
-                chosen_irreps.append((4, 4))
-            elif X == 'T':
-                chosen_irreps.append((6, 1))
-            elif X == 'S':
-                chosen_irreps.append((1, 1))
-            elif X == 'P':
-                chosen_irreps.append((1, 4))
-            while len(chosen_irreps) != n:
-                chosen_irreps.append((4, 1))
-
-            kwargs: dict = dict(verbose=False, force_computation=False)
-            if cg_database is not None:
-                kwargs['cgdatabase'] = cg_database
-            cg_dict = cg_calc(*chosen_irreps, **kwargs).cg_dict
+        for X in tqdm(_X_ORDER, disable=not verbose):
+            # The first irrep is that of the Dirac structure; every derivative index
+            # transforms in the fundamental (4,1) representation.
+            cg_dict = cg_calc(*_operator_irreps(X, nder), **kwargs).cg_dict
 
             for k, v in cg_dict.items():
                 for imul, block in enumerate(v):
                     block = np.round(block, decimals=15)
                     # Each column of the CG block is an independent operator.
                     for icol in range(np.shape(block)[1]):
-                        if X in ('V', 'A'):
-                            cg_mat = cg_remapping(block[:, icol], len(chosen_irreps))
-                        elif X in ('S', 'P'):
-                            # Leading irrep is 1-dimensional and contributes no
-                            # Lorentz index; remap only the n-1 derivative indices.
-                            cg_mat = cg_remapping(block[:, icol], len(chosen_irreps) - 1)
-                        else:  # T
-                            cg_mat = cg_remapping_T(block[:, icol], len(chosen_irreps))
                         Operator(
-                            cgmat=cg_mat,
+                            cgmat=_cgmat_from_column(block[:, icol], X, nder),
                             id=iop,
                             X=X,
                             irrep=rep_label_list[k],
@@ -1150,60 +1194,115 @@ def Operator_from_file(filename: str) -> Operator:
     )
 
 
-def OperatorList_from_database(operator_database: str | None = None) -> list[Operator]:
-    """Return a list of all operators in *operator_database*, sorted by id.
+def _database_files(operator_database: str | None) -> list[Path]:
+    """The operator files of *operator_database* (default: the bundled one), sorted by operator id."""
+    if operator_database is None:
+        operator_database = _BUNDLED_OPERATOR_DATABASE
+    if not Path(operator_database).is_dir():
+        raise ValueError(f"Path does not exist: {operator_database}")
+    return sorted(
+        [x for x in Path(operator_database).glob('**/*') if x.is_file()],
+        key=lambda x: int(x.name.split("_")[1]),
+    )
+
+
+def _selected_files(
+    operator_database: str | None,
+    X: str | Iterable[str] | None,
+    nder: int | Iterable[int] | None,
+    keys: str | Iterable[str] | None,
+) -> list[Path]:
+    """The files of the operators selected by *X*, *nder* and *keys* (see _operator_filter), sorted by id.
+
+    The selection is read from the metadata in the file names (``Operator.save``), so the
+    operators that are left out are never loaded.
+    """
+    selected = _operator_filter(X=X, nder=nder, keys=keys)
+    files = []
+    for file in _database_files(operator_database):
+        # file name: operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy
+        n, x = file.stem.split("_")[2:4]
+        if selected(x, _n_der(int(n), x)):
+            files.append(file)
+    return files
+
+
+def OperatorList_from_database(
+    operator_database: str | None = None,
+    *,
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+) -> list[Operator]:
+    """Return a list of the operators in *operator_database*, sorted by id.
+
+    By default all of them; *X*, *nder* or *keys* select some, with the same syntax as
+    :func:`operator_show`.
 
     Parameters
     ----------
     operator_database : str, optional
         Path to a directory created by ``make_operator_database``.  Defaults
         to the operator database bundled with the package.
+    X : str or iterable of str, optional (keyword only)
+        Dirac structures among ``'S'``, ``'P'``, ``'V'``, ``'A'``, ``'T'`` (``'VA'`` is
+        the same as ``['V', 'A']``).  Default: all.
+    nder : int or iterable of int, optional (keyword only)
+        Numbers of derivatives (≥ 0).  Default: all.
+    keys : str or iterable of str, optional (keyword only)
+        Groups ``'<X><number of derivatives>'``, e.g. ``"S0 P0"`` or ``["V2", "A3"]``.
+        Cannot be combined with *X* or *nder*.
 
     Returns
     -------
     list[Operator]
+
+    Raises
+    ------
+    ValueError
+        If the path does not exist or the selection is not valid.
+
+    Examples
+    --------
+    >>> ops = OperatorList_from_database("my_operators", X="SP", nder=0)   # ψ̄ψ and ψ̄γ₅ψ
     """
-    if operator_database is None:
-        operator_database = _BUNDLED_OPERATOR_DATABASE
-    if not Path(operator_database).is_dir():
-        raise ValueError(f"Path does not exist: {operator_database}")
-    files = sorted(
-        [x for x in Path(operator_database).glob('**/*') if x.is_file()],
-        key=lambda x: int(x.name.split("_")[1]),
-    )
-    return [Operator_from_file(f.as_posix()) for f in files]
+    return [Operator_from_file(f.as_posix()) for f in _selected_files(operator_database, X, nder, keys)]
 
 
-def OperatorDict_from_database(operator_database: str | None = None) -> dict:
-    """Load all operators into a nested dict keyed by ``(n, X)`` then ``(irrep, block)``.
+def OperatorDict_from_database(
+    operator_database: str | None = None,
+    *,
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+) -> dict:
+    """Load the operators into a nested dict keyed by ``(n, X)`` then ``(irrep, block)``.
 
     The returned structure is::
 
         operators_dict[(n, X)][(irrep, block)] → list[Operator]
 
     This layout makes it straightforward to look up all operators of a given
-    irrep and multiplicity block for a specific structure and index count.
+    irrep and multiplicity block for a specific structure and index count.  Note
+    that *n* counts the Lorentz indices, not the derivatives: the operators with
+    k derivatives have n = k for S and P, k + 1 for V and A, k + 2 for T.  The
+    groups and the operators in them are in database order (increasing id).
 
     Parameters
     ----------
     operator_database : str, optional
         Path to a directory created by ``make_operator_database``.  Defaults
         to the operator database bundled with the package.
+    X, nder, keys : optional (keyword only)
+        Select some of the operators, as in :func:`OperatorList_from_database`
+        (default: all of them).
 
     Returns
     -------
     dict
     """
-    if operator_database is None:
-        operator_database = _BUNDLED_OPERATOR_DATABASE
-    if not Path(operator_database).is_dir():
-        raise ValueError(f"Path does not exist: {operator_database}")
-    files = sorted(
-        [x for x in Path(operator_database).glob('**/*') if x.is_file()],
-        key=lambda x: int(x.name.split("_")[1]),
-    )
     operators_dict: dict = {}
-    for file in files:
+    for file in _selected_files(operator_database, X, nder, keys):
         op = Operator_from_file(file.as_posix())
         if (op.n, op.X) not in operators_dict:
             operators_dict[(op.n, op.X)] = {}
@@ -1228,35 +1327,47 @@ def Operator_from_database(operator_id: int, operator_database: str | None = Non
     -------
     Operator
     """
-    if operator_database is None:
-        operator_database = _BUNDLED_OPERATOR_DATABASE
-    if not Path(operator_database).is_dir():
-        raise ValueError(f"Path does not exist: {operator_database}")
-    files = sorted(
-        [x for x in Path(operator_database).glob('**/*') if x.is_file()],
-        key=lambda x: int(x.name.split("_")[1]),
-    )
+    files = _database_files(operator_database)
     if not isinstance(operator_id, int) or operator_id < 1 or operator_id > len(files):
         raise ValueError(f"operator_id must be between 1 and {len(files)}, got {operator_id}.")
     return Operator_from_file(files[operator_id - 1].as_posix())
 
 
-def get_OperatorList() -> list[Operator]:
-    """Return all operators from the bundled database as a flat sorted list.
+def get_OperatorList(
+    *,
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+) -> list[Operator]:
+    """Return the operators of the bundled database as a flat sorted list.
 
-    This is a zero-argument convenience wrapper around
-    :func:`OperatorList_from_database`.  It always reads from the operator
-    database shipped with the h4lat package, so no path configuration is needed.
-    The returned list is sorted by the integer operator id, matching the
-    printed catalogue order.
+    This is a convenience wrapper around :func:`OperatorList_from_database`.
+    It always reads from the operator database shipped with the h4lat package,
+    so no path configuration is needed.  The returned list is sorted by the
+    integer operator id, matching the printed catalogue order.
+
+    Without arguments it returns every operator; *X*, *nder* or *keys* select
+    some of them, by Dirac structure and number of derivatives (the same
+    selection as in :func:`operator_show`).
 
     Use :func:`OperatorList_from_database` with an explicit path if you want to
     read from a custom database generated by :func:`make_operator_database`.
 
+    Parameters
+    ----------
+    X : str or iterable of str, optional (keyword only)
+        Dirac structures among ``'S'``, ``'P'``, ``'V'``, ``'A'``, ``'T'``
+        (``'VA'`` is the same as ``['V', 'A']``).  Default: all.
+    nder : int or iterable of int, optional (keyword only)
+        Numbers of derivatives (≥ 0).  Default: all.
+    keys : str or iterable of str, optional (keyword only)
+        Groups ``'<X><number of derivatives>'``, e.g. ``"S0 P0"`` or
+        ``["V2", "A3"]``.  Cannot be combined with *X* or *nder*.
+
     Returns
     -------
     list[Operator]
-        All operators in the bundled database, sorted by their integer id.
+        The selected operators of the bundled database, sorted by their integer id.
 
     Examples
     --------
@@ -1265,19 +1376,29 @@ def get_OperatorList() -> list[Operator]:
     >>> print(ops[0].X)           # Dirac structure of the first operator
     >>> print(ops[0].irrep)       # H(4) irrep label of the first operator
     >>> print(ops[0].latex_K)     # kinematic factor as a LaTeX string
+    >>> local = get_OperatorList(nder=0)            # ψ̄ Γ ψ for Γ = 𝟙, γ₅, γ_μ, γ_μγ₅, σ_μν
+    >>> scalars = get_OperatorList(X="S", nder=2)   # ψ̄ D_μ D_ν ψ
+    >>> some = get_OperatorList(keys="V1 A1")       # V and A with one derivative
     """
-    # Passing no argument makes OperatorList_from_database fall back to
+    # Passing no database makes OperatorList_from_database fall back to
     # _BUNDLED_OPERATOR_DATABASE, which points at the data/ folder inside the
     # installed package (resolved via importlib.resources).
-    return OperatorList_from_database()
+    return OperatorList_from_database(X=X, nder=nder, keys=keys)
 
 
-def get_OperatorDict() -> dict:
-    """Return all operators from the bundled database as a nested dictionary.
+def get_OperatorDict(
+    *,
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+) -> dict:
+    """Return the operators of the bundled database as a nested dictionary.
 
-    This is a zero-argument convenience wrapper around
-    :func:`OperatorDict_from_database`.  It always reads from the operator
-    database shipped with the h4lat package, so no path configuration is needed.
+    This is a convenience wrapper around :func:`OperatorDict_from_database`.
+    It always reads from the operator database shipped with the h4lat package,
+    so no path configuration is needed.  Without arguments it holds every
+    operator; *X*, *nder* or *keys* select some of them, as in
+    :func:`get_OperatorList`.
 
     The returned structure is::
 
@@ -1285,9 +1406,10 @@ def get_OperatorDict() -> dict:
 
     where:
 
-    * *n* is the total number of Lorentz indices (= 1 + number of derivatives
-      for V/A, = 2 + number of derivatives for T).
-    * *X* is the Dirac structure (``'V'``, ``'A'``, or ``'T'``).
+    * *n* is the total number of Lorentz indices: the number of derivatives
+      for S/P, 1 + the number of derivatives for V/A, 2 + the number of
+      derivatives for T.
+    * *X* is the Dirac structure (``'S'``, ``'P'``, ``'V'``, ``'A'`` or ``'T'``).
     * *irrep* is an H(4) label ``(k, l)`` (e.g. ``(4, 1)``).
     * *block* is the multiplicity index (1-based) within the irrep.
 
@@ -1296,6 +1418,11 @@ def get_OperatorDict() -> dict:
 
     Use :func:`OperatorDict_from_database` with an explicit path if you want to
     read from a custom database generated by :func:`make_operator_database`.
+
+    Parameters
+    ----------
+    X, nder, keys : optional (keyword only)
+        Select some of the operators, as in :func:`get_OperatorList` (default: all).
 
     Returns
     -------
@@ -1306,15 +1433,16 @@ def get_OperatorDict() -> dict:
     Examples
     --------
     >>> d = get_OperatorDict()
-    >>> # All 2-index vector operators in irrep (4,1), multiplicity block 1:
-    >>> ops = d[(2, 'V')][(4, 1), 1]
+    >>> # All 2-index vector operators in irrep (3,1), multiplicity block 1:
+    >>> ops = d[(2, 'V')][(3, 1), 1]
     >>> print(ops[0].symm)        # index-permutation symmetry
     >>> print(ops[0].C)           # C-parity eigenvalue
+    >>> d = get_OperatorDict(X="S", nder=2)   # only the key (2, 'S')
     """
-    # Passing no argument makes OperatorDict_from_database fall back to
+    # Passing no database makes OperatorDict_from_database fall back to
     # _BUNDLED_OPERATOR_DATABASE, which points at the data/ folder inside the
     # installed package (resolved via importlib.resources).
-    return OperatorDict_from_database()
+    return OperatorDict_from_database(X=X, nder=nder, keys=keys)
 
 
 def get_op_selection(n_der: int) -> list[Operator]:
@@ -1345,22 +1473,22 @@ def get_op_selection(n_der: int) -> list[Operator]:
     if n_der == 1:
         # Vector
         # irrep (3,1)
-        opV1 = 1/6 * Operator_from_database(2)                                              # = 11 + 22 + 33 - 3 * 44
-        opV2 = 1/(3 * np.sqrt(2)) * (Operator_from_database(2) - Operator_from_database(3)) # = 33 - 44
+        opV1 = 1/6 * Operator_from_database(26)                                               # = 11 + 22 + 33 - 3 * 44
+        opV2 = 1/(3 * np.sqrt(2)) * (Operator_from_database(26) - Operator_from_database(27)) # = 33 - 44
         # irrep (6,3)
-        opV3 = 1/np.sqrt(2) * Operator_from_database(14)                                    # = 14 + 41
+        opV3 = 1/np.sqrt(2) * Operator_from_database(38)                                      # = 14 + 41
 
         # Axial - irrep (6,4)
-        opA1 = 1/np.sqrt(2) * Operator_from_database(28) # = 13 + 31
-        opA2 = 1/np.sqrt(2) * Operator_from_database(32) # = 34 + 43
+        opA1 = 1/np.sqrt(2) * Operator_from_database(52) # = 13 + 31
+        opA2 = 1/np.sqrt(2) * Operator_from_database(56) # = 34 + 43
 
         # Tensor
         # irrep (8,1)
-        opT1 = Operator_from_database(42) - 1/2 * Operator_from_database(46)  # = 211 - 244
-        opT2 = - Operator_from_database(46)                                    # = 233 - 244
+        opT1 = Operator_from_database(66) - 1/2 * Operator_from_database(70)  # = 211 - 244
+        opT2 = - Operator_from_database(70)                                    # = 233 - 244
         # irrep (8,2)
-        opT3 =  Operator_from_database(55) + 1/2 * Operator_from_database(51) # = 124 - 241
-        opT4 = 2 * Operator_from_database(55)
+        opT3 =  Operator_from_database(79) + 1/2 * Operator_from_database(75) # = 124 - 241
+        opT4 = 2 * Operator_from_database(79)
 
         # Set custom labels
         opV1.id = "V1"
@@ -1377,34 +1505,34 @@ def get_op_selection(n_der: int) -> list[Operator]:
 
     if n_der == 2:
         # Vector - irrep (4,2)
-        opV1 = Operator_from_database(73)  # = {2,3,4}      ( {}=symmetric combination )
-        opV2 = Operator_from_database(74)  # = {1,3,4}
-        opV3 = Operator_from_database(75)  # = {1,2,4}
-        opV4 = Operator_from_database(76)  # = {1,2,3}
+        opV1 = Operator_from_database(129) # = {2,3,4}      ( {}=symmetric combination )
+        opV2 = Operator_from_database(130) # = {1,3,4}
+        opV3 = Operator_from_database(131) # = {1,2,4}
+        opV4 = Operator_from_database(132) # = {1,2,3}
 
         # Axial - irrep (4,3)
-        opA1 = Operator_from_database(125) # = {2,3,4}
-        opA2 = Operator_from_database(126) # = {1,3,4}
-        opA3 = Operator_from_database(127) # = {1,2,4}
-        opA4 = Operator_from_database(128) # = {1,2,3}
+        opA1 = Operator_from_database(181) # = {2,3,4}
+        opA2 = Operator_from_database(182) # = {1,3,4}
+        opA3 = Operator_from_database(183) # = {1,2,4}
+        opA4 = Operator_from_database(184) # = {1,2,3}
 
         # Tensor - irrep (3,2)
-        # (operators 197 and 198 cannot be used because their K is proportional to pz*(px-py),
+        # (operators 253 and 254 cannot be used because their K is proportional to pz*(px-py),
         #  and we have px=py in the 2-der dataset, and pz=0 in the 1-der one)
-        opT1 =  2 * Operator_from_database(199) # = 2x 1,2,{3,4} + 1,3,{2,4} + 1,4,{2,3} - 2,3,{1,4} - 2,4,{1,3}
+        opT1 =  2 * Operator_from_database(255) # = 2x 1,2,{3,4} + 1,3,{2,4} + 1,4,{2,3} - 2,3,{1,4} - 2,4,{1,3}
 
         # Tensor - irrep (3,3)
-        # (operator 202 cannot be used because it has K=0 always) (TO DO: look better into it to be sure)
-        opT2 =      Operator_from_database(200) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
-        opT3 = -2 * Operator_from_database(201) # = 2x 1,2,{1,2} + 1,3,{1,3} -3x 1,4,{1,4} - 2,3,{2,3} +3 2,4,{2,4}
+        # (operator 258 cannot be used because it has K=0 always) (TO DO: look better into it to be sure)
+        opT2 =      Operator_from_database(256) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
+        opT3 = -2 * Operator_from_database(257) # = 2x 1,2,{1,2} + 1,3,{1,3} -3x 1,4,{1,4} - 2,3,{2,3} +3 2,4,{2,4}
 
         # Tensor - irrep (6,2), block 1 (C=-1)
-        opT4 =   Operator_from_database(233) # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
-        opT5 =   Operator_from_database(234) # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
-        opT6 = - Operator_from_database(235) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
-        opT7 =   Operator_from_database(236) # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
-        opT8 = - Operator_from_database(237) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
-        opT9 = - Operator_from_database(238) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
+        opT4 =   Operator_from_database(289) # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
+        opT5 =   Operator_from_database(290) # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
+        opT6 = - Operator_from_database(291) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
+        opT7 =   Operator_from_database(292) # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
+        opT8 = - Operator_from_database(293) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
+        opT9 = - Operator_from_database(294) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
 
         # Set custom labels
         opV1.id = "V1"
@@ -1430,26 +1558,26 @@ def get_op_selection(n_der: int) -> list[Operator]:
 
     if n_der == 3:
         # Vector - irrep (1,2) - C=+1
-        opV = Operator_from_database(285) # = {1,2,3,4} (completely symmetric combination of 4 indices)
+        opV = Operator_from_database(469) # = {1,2,3,4} (completely symmetric combination of 4 indices)
 
         # Axial - irrep (1,3) - C=-1
-        opA = Operator_from_database(538) # = {1,2,3,4} (completely symmetric combination of 4 indices)
+        opA = Operator_from_database(722) # = {1,2,3,4} (completely symmetric combination of 4 indices)
 
         # Tensor - irrep (4,2) - C=+1
         # Kinematic factor K != 0
-        opT1 = Operator_from_database(833) + 2*Operator_from_database(837) # 2 x 1,a,b,1,c + 1,a,1,b,c  + 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
-        opT2 = Operator_from_database(834) + 2*Operator_from_database(838) # 2 x 2,a,b,2,c + 2,a,2,b,c  + 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
-        opT1p = Operator_from_database(841) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(2,3,4) )
-        opT2p = Operator_from_database(842) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(1,3,4) )
+        opT1 = Operator_from_database(1017) + 2*Operator_from_database(1021) # 2 x 1,a,b,1,c + 1,a,1,b,c  + 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
+        opT2 = Operator_from_database(1018) + 2*Operator_from_database(1022) # 2 x 2,a,b,2,c + 2,a,2,b,c  + 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
+        opT1p = Operator_from_database(1025) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(2,3,4) )
+        opT2p = Operator_from_database(1026) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(1,3,4) )
         # (opT1 - opT1p) is traceless (not counting the renormalization mixing)
         # (opT2 - opT2p) is traceless (not counting the renormalization mixing)
         # the operators opT3, opT4, opT3p, opT4p have K proportional to px-py, so they cannot be used with our dataset
 
         # Kinematic factor K = 0 - not interesting combination (linearly independent from the K!=0 ones)
-        # opT1_K0 = -( Operator_from_database(833) - 2*Operator_from_database(837) ) # 2 x 1,a,b,1,c - 1,a,1,b,c  - 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
-        # opT2_K0 = -( Operator_from_database(834) - 2*Operator_from_database(838) ) # 2 x 2,a,b,2,c - 2,a,2,b,c  - 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
-        # opT1p_K0 = Operator_from_database(841) - 2*Operator_from_database(845) # a,b,a,a,c + a,b,c,a,a - 2 x a,b,a,c,a ( a,b,c summed over Permutations(2,3,4) )
-        # opT2p_K0 = Operator_from_database(842) - 2*Operator_from_database(846) # a,b,a,a,c + a,b,c,a,a - 2 x a,b,a,c,a ( a,b,c summed over Permutations(1,3,4) )
+        # opT1_K0 = -( Operator_from_database(1017) - 2*Operator_from_database(1021) ) # 2 x 1,a,b,1,c - 1,a,1,b,c  - 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
+        # opT2_K0 = -( Operator_from_database(1018) - 2*Operator_from_database(1022) ) # 2 x 2,a,b,2,c - 2,a,2,b,c  - 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
+        # opT1p_K0 = Operator_from_database(1025) - 2*Operator_from_database(1029) # a,b,a,a,c + a,b,c,a,a - 2 x a,b,a,c,a ( a,b,c summed over Permutations(2,3,4) )
+        # opT2p_K0 = Operator_from_database(1026) - 2*Operator_from_database(1030) # a,b,a,a,c + a,b,c,a,a - 2 x a,b,a,c,a ( a,b,c summed over Permutations(1,3,4) )
         # (opT1_K0 - opT1p_K0) is traceless (not counting the renormalization mixing)
         # (opT2_K0 - opT2p_K0) is traceless (not counting the renormalization mixing)
         # opT1_K0.id = "T1_K0"
@@ -1571,30 +1699,30 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
     if paper == "Burger:2021knd":
         # a2: Axial - irrep (4,3)
-        op1 = Operator_from_database(125)  # = {2,3,4}
-        op2 = Operator_from_database(126)  # = {1,3,4}
-        op3 = Operator_from_database(127)  # = {1,2,4}
-        op4 = Operator_from_database(128)  # = {1,2,3}
+        op1 = Operator_from_database(181)  # = {2,3,4}
+        op2 = Operator_from_database(182)  # = {1,3,4}
+        op3 = Operator_from_database(183)  # = {1,2,4}
+        op4 = Operator_from_database(184)  # = {1,2,3}
 
         # d2: Axial - irrep (8,1)
-        op5 = 1/(4 * np.sqrt(3)) * (1/2 * Operator_from_database(151) - 3/2 * Operator_from_database(147))  # = 2x 2,{1,4} - 1,{2,4} - 4,{1,2}
-        op6 = 1/(4 * np.sqrt(3)) * (1/2 * Operator_from_database(152) + 3/2 * Operator_from_database(148))  # = 2x 2,{1,3} - 1,{2,3} - 3,{1,2}
-        op7 = 1/(4 * np.sqrt(3)) * (Operator_from_database(150) - 3/2 * Operator_from_database(146))        # = 2x 3,{1,4} - 1,{3,4} - 4,{1,3}
-        op8 = 1/(4 * np.sqrt(3)) * (Operator_from_database(149) + 3/2 * Operator_from_database(145))        # = 2x 3,{2,4} - 2,{3,4} - 4,{2,3}
-        op9 = 1/4 * (Operator_from_database(149) - 1/2 * Operator_from_database(145))                        # = 4,{2,3} - 2,{3,4}
-        op10 = 1/4 * (Operator_from_database(150) + 1/2 * Operator_from_database(146))                       # = 4,{1,3} - 1,{3,4}
-        op11 = 1/4 * (-1/2 * Operator_from_database(151) - 1/2 * Operator_from_database(147))                # = 4,{1,2} - 1,{2,4}
-        op12 = 1/4 * (-1/2 * Operator_from_database(152) + 1/2 * Operator_from_database(148))                # = 3,{1,2} - 1,{2,3}
+        op5 = 1/(4 * np.sqrt(3)) * (1/2 * Operator_from_database(207) - 3/2 * Operator_from_database(203))  # = 2x 2,{1,4} - 1,{2,4} - 4,{1,2}
+        op6 = 1/(4 * np.sqrt(3)) * (1/2 * Operator_from_database(208) + 3/2 * Operator_from_database(204))  # = 2x 2,{1,3} - 1,{2,3} - 3,{1,2}
+        op7 = 1/(4 * np.sqrt(3)) * (Operator_from_database(206) - 3/2 * Operator_from_database(202))        # = 2x 3,{1,4} - 1,{3,4} - 4,{1,3}
+        op8 = 1/(4 * np.sqrt(3)) * (Operator_from_database(205) + 3/2 * Operator_from_database(201))        # = 2x 3,{2,4} - 2,{3,4} - 4,{2,3}
+        op9 = 1/4 * (Operator_from_database(205) - 1/2 * Operator_from_database(201))                        # = 4,{2,3} - 2,{3,4}
+        op10 = 1/4 * (Operator_from_database(206) + 1/2 * Operator_from_database(202))                       # = 4,{1,3} - 1,{3,4}
+        op11 = 1/4 * (-1/2 * Operator_from_database(207) - 1/2 * Operator_from_database(203))                # = 4,{1,2} - 1,{2,4}
+        op12 = 1/4 * (-1/2 * Operator_from_database(208) + 1/2 * Operator_from_database(204))                # = 3,{1,2} - 1,{2,3}
 
         # d2: Tensor - irrep (8,1)
-        op13 = 1/(2 * np.sqrt(2)) * (-1/2 * Operator_from_database(43) + 1/2 * Operator_from_database(47))  # = 3,1,1 - 3,4,4
-        op14 = 1/(2 * np.sqrt(2)) * (1/2 * Operator_from_database(44) + 1/2 * Operator_from_database(48))   # = 4,3,3 - 4,1,1
-        op15 = 1/(2 * np.sqrt(2)) * (-Operator_from_database(42) + 1/2 * Operator_from_database(46))        # = 2,4,4 - 2,1,1
-        op16 = 1/(2 * np.sqrt(2)) * (Operator_from_database(41) + 1/2 * Operator_from_database(45))         # = 1,2,2 - 1,4,4
-        op17 = 1/(2 * np.sqrt(6)) * (-Operator_from_database(41) + 3/2 * Operator_from_database(45))        # = 2x 1,3,3 - 1,2,2 - 1,4,4
-        op18 = 1/(2 * np.sqrt(6)) * (Operator_from_database(42) + 3/2 * Operator_from_database(46))         # = -2x 2,3,3 + 2,1,1 + 2,4,4
-        op19 = 1/(2 * np.sqrt(6)) * (-1/2 * Operator_from_database(43) - 3/2 * Operator_from_database(47))  # = 2x 3,2,2 - 3,1,1 - 3,4,4
-        op20 = 1/(2 * np.sqrt(6)) * (1/2 * Operator_from_database(44) - 3/2 * Operator_from_database(48))   # = -2x 4,2,2 + 4,1,1 + 4,3,3
+        op13 = 1/(2 * np.sqrt(2)) * (-1/2 * Operator_from_database(67) + 1/2 * Operator_from_database(71))  # = 3,1,1 - 3,4,4
+        op14 = 1/(2 * np.sqrt(2)) * (1/2 * Operator_from_database(68) + 1/2 * Operator_from_database(72))   # = 4,3,3 - 4,1,1
+        op15 = 1/(2 * np.sqrt(2)) * (-Operator_from_database(66) + 1/2 * Operator_from_database(70))        # = 2,4,4 - 2,1,1
+        op16 = 1/(2 * np.sqrt(2)) * (Operator_from_database(65) + 1/2 * Operator_from_database(69))         # = 1,2,2 - 1,4,4
+        op17 = 1/(2 * np.sqrt(6)) * (-Operator_from_database(65) + 3/2 * Operator_from_database(69))        # = 2x 1,3,3 - 1,2,2 - 1,4,4
+        op18 = 1/(2 * np.sqrt(6)) * (Operator_from_database(66) + 3/2 * Operator_from_database(70))         # = -2x 2,3,3 + 2,1,1 + 2,4,4
+        op19 = 1/(2 * np.sqrt(6)) * (-1/2 * Operator_from_database(67) - 3/2 * Operator_from_database(71))  # = 2x 3,2,2 - 3,1,1 - 3,4,4
+        op20 = 1/(2 * np.sqrt(6)) * (1/2 * Operator_from_database(68) - 3/2 * Operator_from_database(72))   # = -2x 4,2,2 + 4,1,1 + 4,3,3
 
         # Set custom labels
         op1.id = "O^5_{234}"
@@ -1624,22 +1752,22 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
     if paper == "Rodekamp:2023wpe":
         # Vector
         # irrep (3,1)
-        opV1 = 1/6 * Operator_from_database(2)                                              # = 11 + 22 + 33 - 3 * 44
-        opV2 = 1/(3 * np.sqrt(2)) * (Operator_from_database(2) - Operator_from_database(3)) # = 33 - 44
+        opV1 = 1/6 * Operator_from_database(26)                                               # = 11 + 22 + 33 - 3 * 44
+        opV2 = 1/(3 * np.sqrt(2)) * (Operator_from_database(26) - Operator_from_database(27)) # = 33 - 44
         # irrep (6,3)
-        opV3 = 1/np.sqrt(2) * Operator_from_database(14)                                    # = 14 + 41
+        opV3 = 1/np.sqrt(2) * Operator_from_database(38)                                      # = 14 + 41
 
         # Axial - irrep (6,4)
-        opA1 = 1/np.sqrt(2) * Operator_from_database(28) # = 13 + 31
-        opA2 = 1/np.sqrt(2) * Operator_from_database(32) # = 34 + 43
+        opA1 = 1/np.sqrt(2) * Operator_from_database(52) # = 13 + 31
+        opA2 = 1/np.sqrt(2) * Operator_from_database(56) # = 34 + 43
 
         # Tensor
         # irrep (8,1)
-        opT1 = Operator_from_database(42) - 1/2 * Operator_from_database(46)  # = 211 - 244
-        opT2 = - Operator_from_database(46)                                    # = 233 - 244
+        opT1 = Operator_from_database(66) - 1/2 * Operator_from_database(70)  # = 211 - 244
+        opT2 = - Operator_from_database(70)                                    # = 233 - 244
         # irrep (8,2)
-        opT3 = Operator_from_database(55) + 1/2 * Operator_from_database(51)  # = 124 - 241
-        opT4 = 2 * Operator_from_database(55)                                  # = 2x 124 + 142 - 241
+        opT3 = Operator_from_database(79) + 1/2 * Operator_from_database(75)  # = 124 - 241
+        opT4 = 2 * Operator_from_database(79)                                  # = 2x 124 + 142 - 241
 
         # Set custom labels
         opV1.id = "V1"
@@ -1656,35 +1784,35 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
     if paper == "Taggi:2026skn":
         # Vector - irrep (4,2)
-        opV1 = Operator_from_database(73)  # = {2,3,4}
-        opV2 = Operator_from_database(74)  # = {1,3,4}
-        opV3 = Operator_from_database(75)  # = {1,2,4}
-        opV4 = Operator_from_database(76)  # = {1,2,3}
+        opV1 = Operator_from_database(129) # = {2,3,4}
+        opV2 = Operator_from_database(130) # = {1,3,4}
+        opV3 = Operator_from_database(131) # = {1,2,4}
+        opV4 = Operator_from_database(132) # = {1,2,3}
 
         # Axial - irrep (4,3)
-        opA1 = Operator_from_database(125) # = {2,3,4}
-        opA2 = Operator_from_database(126) # = {1,3,4}
-        opA3 = Operator_from_database(127) # = {1,2,4}
-        opA4 = Operator_from_database(128) # = {1,2,3}
+        opA1 = Operator_from_database(181) # = {2,3,4}
+        opA2 = Operator_from_database(182) # = {1,3,4}
+        opA3 = Operator_from_database(183) # = {1,2,4}
+        opA4 = Operator_from_database(184) # = {1,2,3}
 
         # Tensor - irrep (3,2)
-        # (operators 197 and 198 are not used: their K is proportional to p_3 (p_1^2 - p_2^2),
+        # (operators 253 and 254 are not used: their K is proportional to p_3 (p_1^2 - p_2^2),
         #  which vanishes for the momenta used in that work, with p_1 = p_2 or p_3 = 0)
-        opT1 = 2 * Operator_from_database(199) # = 2x 1,2,{3,4} + 1,3,{2,4} + 1,4,{2,3} - 2,3,{1,4} - 2,4,{1,3}
+        opT1 = 2 * Operator_from_database(255) # = 2x 1,2,{3,4} + 1,3,{2,4} + 1,4,{2,3} - 2,3,{1,4} - 2,4,{1,3}
 
         # Tensor - irrep (3,3)
-        # (operator 202 is not used: its K vanishes with the default polarisation projector,
+        # (operator 258 is not used: its K vanishes with the default polarisation projector,
         #  gamma_pol_index=0, i.e. Γ_pol = ½(1 + γ₄)(1 − i γ₁γ₂))
-        opT2 =      Operator_from_database(200) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
-        opT3 = -2 * Operator_from_database(201) # = 2x 1,2,{1,2} + 1,3,{1,3} - 3x 1,4,{1,4} - 2,3,{2,3} + 3x 2,4,{2,4}
+        opT2 =      Operator_from_database(256) # = 1,2,{1,2} - 1,3,{1,3} + 2,3,{2,3}
+        opT3 = -2 * Operator_from_database(257) # = 2x 1,2,{1,2} + 1,3,{1,3} - 3x 1,4,{1,4} - 2,3,{2,3} + 3x 2,4,{2,4}
 
         # Tensor - irrep (6,2), block 1 (C=-1)
-        opT4 =   Operator_from_database(233) # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
-        opT5 =   Operator_from_database(234) # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
-        opT6 = - Operator_from_database(235) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
-        opT7 =   Operator_from_database(236) # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
-        opT8 = - Operator_from_database(237) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
-        opT9 = - Operator_from_database(238) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
+        opT4 =   Operator_from_database(289) # = 1,3,{1,4} + 1,4,{1,3} - 2,3,{2,4} - 2,4,{2,3}
+        opT5 =   Operator_from_database(290) # = 1,2,{1,4} + 1,4,{1,2} + 2,3,{3,4} - 3,4,{2,3}
+        opT6 = - Operator_from_database(291) # = 1,2,{2,4} - 1,3,{3,4} - 2,4,{1,2} + 3,4,{1,3}
+        opT7 =   Operator_from_database(292) # = 1,2,{1,3} + 1,3,{1,2} + 2,4,{3,4} + 3,4,{2,4}
+        opT8 = - Operator_from_database(293) # = 1,2,{2,3} - 1,4,{3,4} - 2,3,{1,2} - 3,4,{1,4}
+        opT9 = - Operator_from_database(294) # = 1,3,{2,3} - 1,4,{2,4} + 2,3,{1,3} - 2,4,{1,4}
 
         # Set custom labels
         opV1.id = "V1"
@@ -1710,19 +1838,19 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
     if paper == "Alexandrou:2026tjs":
         # 2 derivatives: Vector - irrep (4,2)
-        op1 = Operator_from_database(73)  # = {2,3,4}
-        op2 = Operator_from_database(74)  # = {1,3,4}
-        op3 = Operator_from_database(75)  # = {1,2,4}
-        op4 = Operator_from_database(76)  # = {1,2,3}
+        op1 = Operator_from_database(129)  # = {2,3,4}
+        op2 = Operator_from_database(130)  # = {1,3,4}
+        op3 = Operator_from_database(131)  # = {1,2,4}
+        op4 = Operator_from_database(132)  # = {1,2,3}
 
         # 3 derivatives: Vector
         # irrep (1,2)
-        op5 = Operator_from_database(285)  # = {1,2,3,4}
+        op5 = Operator_from_database(469)  # = {1,2,3,4}
         # irrep (6,2): the sum of the same component of blocks 1-4 is completely symmetric;
         # only the three components in which the index 4 appears twice are used
-        op6 = -Operator_from_database(408) - Operator_from_database(414) - Operator_from_database(420) - Operator_from_database(426)  # = {4,4,2,3} - {1,1,2,3}
-        op7 = -Operator_from_database(409) - Operator_from_database(415) - Operator_from_database(421) - Operator_from_database(427)  # = {4,4,1,3} - {2,2,1,3}
-        op8 = -Operator_from_database(410) - Operator_from_database(416) - Operator_from_database(422) - Operator_from_database(428)  # = {4,4,1,2} - {3,3,1,2}
+        op6 = -Operator_from_database(592) - Operator_from_database(598) - Operator_from_database(604) - Operator_from_database(610)  # = {4,4,2,3} - {1,1,2,3}
+        op7 = -Operator_from_database(593) - Operator_from_database(599) - Operator_from_database(605) - Operator_from_database(611)  # = {4,4,1,3} - {2,2,1,3}
+        op8 = -Operator_from_database(594) - Operator_from_database(600) - Operator_from_database(606) - Operator_from_database(612)  # = {4,4,1,2} - {3,3,1,2}
 
         # Set custom labels
         op1.id = "{2,3,4}"
@@ -1742,18 +1870,18 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
         # Second moment, v_2 (1 derivative)
         # Vector - irrep (6,3), C=+1
-        opv2a = Operator_from_database(14)        # = {1,4}
+        opv2a = Operator_from_database(38)         # = {1,4}
         # Vector - irrep (3,1), C=+1
-        opv2b = -1/3 * Operator_from_database(2)  # = 4,4 - 1/3 * (1,1 + 2,2 + 3,3)
+        opv2b = -1/3 * Operator_from_database(26)  # = 4,4 - 1/3 * (1,1 + 2,2 + 3,3)
 
         # Third moment, v_3 (2 derivatives): Vector - irrep (8,1), C=-1
         # (the same combination of components 1 and 5 of blocks 1 and 2: each part has mixed symmetry,
         #  their sum is completely symmetric, so the operator belongs to no single block)
-        opv3 = -1/2 * (Operator_from_database(81) + 3/2 * Operator_from_database(85) + Operator_from_database(89) + 3/2 * Operator_from_database(93))  # = {4,4,1} - 1/2 * ({2,2,1} + {3,3,1})
+        opv3 = -1/2 * (Operator_from_database(137) + 3/2 * Operator_from_database(141) + Operator_from_database(145) + 3/2 * Operator_from_database(149))  # = {4,4,1} - 1/2 * ({2,2,1} + {3,3,1})
 
         # Fourth moment, v_4 (3 derivatives): Vector - irrep (2,1), C=+1
         # (likewise, the same combination of components 1 and 2 of blocks 1 and 2)
-        opv4 = (-Operator_from_database(287) - 3/2 * Operator_from_database(288) - Operator_from_database(289) - 3/2 * Operator_from_database(290)) / 2  # = {1,1,4,4} + {2,2,3,3} - 1/2 * ({1,1,2,2} + {1,1,3,3} + {2,2,4,4} + {3,3,4,4})
+        opv4 = (-Operator_from_database(471) - 3/2 * Operator_from_database(472) - Operator_from_database(473) - 3/2 * Operator_from_database(474)) / 2  # = {1,1,4,4} + {2,2,3,3} - 1/2 * ({1,1,2,2} + {1,1,3,3} + {2,2,4,4} + {3,3,4,4})
 
         # Set custom labels
         opv2a.id = "v_2a"
@@ -1769,7 +1897,9 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
 
     Monomials are sorted by their multi-index value and formatted using the
     ``numerics_to_latex_conv`` dictionary so that CG coefficients are rendered
-    as proper fractions or square-root fractions rather than raw floats.
+    as proper fractions or square-root fractions rather than raw floats.  A
+    monomial without indices (an operator without Lorentz indices, such as ψ̄ψ)
+    is written ``O^{X}``.
 
     Parameters
     ----------
@@ -1787,21 +1917,10 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     numerics_to_latex_conv = latex_conversion_table()
     latex_str = ""
     monoms_list = list(sym.Add.make_args(operatorO))
-    # Extract the concatenated index string from each monomial for sorting.
-    index_list = [
-        int(
-            ''.join(
-                str(monom.as_coeff_mul()[1][1])
-                .replace('O', '')
-                .replace('[', '')
-                .replace(']', '')
-                .replace(' ', '')
-                .split(',')
-            )
-        )
-        for monom in monoms_list
-    ]
-    monoms_list = [m for _, m in sorted(zip(index_list, monoms_list))]
+    # Sort the monomials by their multi-index: the indices of the symbol O[i, j, ...]
+    # (none for O[]), compared as a tuple of integers.
+    index_list = [tuple(int(i) for i in re.findall(r"\d+", str(monom.as_coeff_mul()[1][1]))) for monom in monoms_list]
+    monoms_list = [m for _, m in sorted(zip(index_list, monoms_list), key=lambda pair: pair[0])]
 
     for i, e in enumerate(monoms_list):
         sign = e.as_coeff_mul()[0]
@@ -1824,7 +1943,8 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
         else:
             latex_str += str(coeff)
 
-        latex_str += str(symbol).replace('[', '^{' + X + '}_{').replace(']', '}')
+        # O[1, 2] -> O^{X}_{1, 2}; O[] (no indices) -> O^{X}
+        latex_str += str(symbol).replace('[]', '^{' + X + '}').replace('[', '^{' + X + '}_{').replace(']', '}')
 
     return latex_str
 
@@ -1922,9 +2042,10 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     Parameters
     ----------
     X : str
-        ``'V'``, ``'A'``, or ``'T'`` — selects the leading irrep.
+        ``'S'``, ``'P'``, ``'V'``, ``'A'`` or ``'T'`` — selects the leading irrep.
     n_der : int
-        Number of derivative indices.
+        Number of derivative indices (≥ 0; without derivatives the product is the
+        leading irrep alone, which is always mixing-safe).
     operator_dict : dict or None
         If provided (output of ``OperatorDict_from_database``), also reports
         the index-symmetry of the operators.
@@ -1942,31 +2063,21 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
         raise ImportError("pandas is required for decomposition_analysis().")
     if X not in ['V', 'A', 'T', 'S', 'P']:
         raise ValueError("X must be 'V', 'A', 'T', 'S' or 'P'.")
-    if not isinstance(n_der, int) or n_der < 1:
-        raise ValueError("n_der must be a positive integer.")
+    if isinstance(n_der, bool) or not isinstance(n_der, int) or n_der < 0:
+        raise ValueError("n_der must be a non-negative integer.")
 
-    V = (4, 1)
-    starting_irrep = (
-        ((4, 1),) if X == 'V' else
-        ((4, 4),) if X == 'A' else
-        ((6, 1),) if X == 'T' else
-        ((1, 1),) if X == 'S' else
-        ((1, 4),)  # P
-    )
+    product = _operator_irreps(X, n_der)
 
     available_irreps = {
-        rep_label_list[i]: ["Y", mul, "-"]
-        for i, mul in enumerate(get_multiplicities(*(starting_irrep + (V,) * n_der)))
-        if mul > 0
+        rep_label_list[i]: ["Y", mul, "-"] for i, mul in enumerate(get_multiplicities(*product)) if mul > 0
     }
 
     # For each lower-dimensional product of any starting structure, check whether
     # the current irrep already appears.  If it does, renormalisation mixing is
     # possible and we flag it as not mixing-safe.
-    starting_irreps_list = [(1, 1), (1, 4), (4, 1), (4, 4), (6, 1)]
     for i_dim in range(n_der):
-        for initial_irrep in starting_irreps_list:
-            low_dim_irrep = get_multiplicities(*((initial_irrep,) + (V,) * i_dim))
+        for X_low in _X_ORDER:
+            low_dim_irrep = get_multiplicities(*_operator_irreps(X_low, i_dim))
             for key in available_irreps:
                 if low_dim_irrep[irrep_index[key]] > 0:
                     available_irreps[key][0] = "N"
@@ -1974,13 +2085,7 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     if operator_dict is not None:
         for key in available_irreps:
             if available_irreps[key][1] == 1:
-                if X in ('V', 'A'):
-                    n_idx = n_der + 1
-                elif X == 'T':
-                    n_idx = n_der + 2
-                else:  # S, P: all indices are derivatives
-                    n_idx = n_der
-                op_list = operator_dict[(n_idx, X)][key, 1]
+                op_list = operator_dict[(_n_indices(n_der, X), X)][key, 1]
                 symm_list = [op.symm for op in op_list]
                 available_irreps[key][2] = symm_list[0][0] if all_equal(symm_list) else 'Mixed'
 
@@ -1993,7 +2098,7 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
         df = df.drop(columns=["Symmetry"])
 
     if verbose:
-        print(f"\nAnalysis of { ' x '.join(str(e) for e in (starting_irrep + (V,) * n_der)) } :\n")
+        print(f"\nAnalysis of { ' x '.join(str(e) for e in product) } :\n")
         print("\n".join("|" + "|".join(row.split("|")[2:]) for row in df.to_markdown().split("\n")))
 
     if print_count_table:
@@ -2002,21 +2107,87 @@ def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None
     return df
 
 
+################## Operator selection ################
+
+# The operators are selected by Dirac structure X and number of derivatives, in the same
+# way in operator_show (the PDF catalogue) and in the database loaders
+# (OperatorList_from_database, get_OperatorList, ...): either with X and nder, or with keys
+# '<X><nder>' such as 'V2'.
+
+
+def _parse_X(X: str | Iterable[str]) -> list[str]:
+    """Dirac structures of a selection: every letter of every item, ignoring commas and spaces (case-insensitive)."""
+    letters = X if isinstance(X, str) else "".join(str(x) for x in X)
+    X_list = [c for c in letters.upper() if c not in ", "]
+    invalid = sorted({c for c in X_list if c not in _X_ORDER})
+    if invalid or not X_list:
+        raise ValueError(f"X must be made of S, P, V, A and T, got {X!r}.")
+    return X_list
+
+
+def _parse_nder(nder: int | Iterable[int]) -> list[int]:
+    """Numbers of derivatives of a selection: non-negative integers (bool is excluded, although it is an int)."""
+    nder_list = [nder] if isinstance(nder, (int, np.integer)) else list(nder)
+    if not nder_list or any(isinstance(d, bool) or not isinstance(d, (int, np.integer)) or d < 0 for d in nder_list):
+        raise ValueError(f"nder must be a non-negative integer or a list of them, got {nder!r}.")
+    return [int(d) for d in nder_list]
+
+
+def _parse_keys(keys: str | Iterable[str]) -> list[tuple[str, int]]:
+    """(X, nder) pairs of keys such as 'V2'; a single string may hold several ("V2,V3" or "V2 V3")."""
+    keys = [keys] if isinstance(keys, str) else list(keys)
+    tokens = [token for key in keys for token in re.split(r"[,\s]+", str(key).strip()) if token]
+    if not tokens:
+        raise ValueError("keys is empty: give at least one key such as 'V2'.")
+    pairs = []
+    for token in tokens:
+        match = re.fullmatch(r"([SPVAT])(\d+)", token.upper())
+        if match is None:
+            raise ValueError(
+                f"Invalid key {token!r}: expected a Dirac structure (S, P, V, A or T) followed by "
+                "the number of derivatives, e.g. 'V2' or 'S0'."
+            )
+        pairs.append((match.group(1), int(match.group(2))))
+    return pairs
+
+
+def _operator_filter(
+    X: str | Iterable[str] | None = None,
+    nder: int | Iterable[int] | None = None,
+    keys: str | Iterable[str] | None = None,
+) -> Callable[[str, int], bool]:
+    """Selection of the database loaders, as a function (X, nder) -> whether the operators are selected.
+
+    Unlike the catalogue (:func:`_catalogue_selection`), *X* = None and *nder* = None
+    select every Dirac structure and every number of derivatives, so that without
+    arguments every operator is selected.
+
+    Raises
+    ------
+    ValueError
+        If *keys* is combined with *X* or *nder*, or a value is not valid.
+    """
+    if keys is not None:
+        if X is not None or nder is not None:
+            raise ValueError("Select the operators either with keys or with X and nder, not both.")
+        pairs = set(_parse_keys(keys))
+        return lambda x, d: (x, d) in pairs
+    X_set = None if X is None else set(_parse_X(X))
+    nder_set = None if nder is None else set(_parse_nder(nder))
+    return lambda x, d: (X_set is None or x in X_set) and (nder_set is None or d in nder_set)
+
+
 ################## PDF Catalogue ################
 
-# Dirac structures in the order in which make_operator_database writes them; also the
-# order in which they are listed in the default catalogue titles and file names.
-_X_ORDER = ('V', 'A', 'T', 'S', 'P')
-
-# Default selection of operator_show / h4lat-catalogue: V, A and T operators with one
-# and two derivatives (IDs 1-280 of the bundled database).  The operators with three
+# Default selection of operator_show / h4lat-catalogue: every Dirac structure with zero, one
+# and two derivatives (IDs 1-336 of the bundled database).  The operators with three
 # derivatives take most of the time, so they are written only on request.
-_CATALOGUE_DEFAULT_X = ('V', 'A', 'T')
-_CATALOGUE_DEFAULT_NDER = (1, 2)
+_CATALOGUE_DEFAULT_X = _X_ORDER
+_CATALOGUE_DEFAULT_NDER = (0, 1, 2)
 
 
 def _derivatives_text(nders: list[int]) -> str:
-    """'1 derivative', '3 derivatives', '1, 2 derivatives' (for catalogue titles)."""
+    """'1 derivative', '3 derivatives', '0, 1, 2 derivatives' (for catalogue titles)."""
     return "1 derivative" if nders == [1] else f"{', '.join(str(d) for d in nders)} derivatives"
 
 
@@ -2028,18 +2199,18 @@ def _catalogue_selection(
     """Parse the operator selection of :func:`operator_show`.
 
     The selection is either the product of the Dirac structures *X* and the numbers of
-    derivatives *nder* (each defaulting to ``('V', 'A', 'T')`` and ``(1, 2)``), or an
-    explicit list of *keys* such as ``['V2', 'V3', 'A3']``: a Dirac structure followed
+    derivatives *nder* (each defaulting to ``('S', 'P', 'V', 'A', 'T')`` and ``(0, 1, 2)``),
+    or an explicit list of *keys* such as ``['V2', 'V3', 'A3']``: a Dirac structure followed
     by the number of derivatives.  Note that a key counts **derivatives**, not Lorentz
     indices: ``'V2'`` is the vector operators with 2 derivatives, i.e. n = 3 indices.
 
     Parameters
     ----------
     X : str or iterable of str, optional
-        Dirac structures among V, A, T, S, P.  Every letter counts, so ``'VA'``,
+        Dirac structures among S, P, V, A, T.  Every letter counts, so ``'VA'``,
         ``'V,A'`` and ``['V', 'A']`` are the same selection (case-insensitive).
     nder : int or iterable of int, optional
-        Numbers of derivatives (each ≥ 1).
+        Numbers of derivatives (each ≥ 0).
     keys : str or iterable of str, optional
         Keys ``'<X><nder>'``; a string may hold several, separated by commas or
         spaces.  Cannot be combined with *X* or *nder*.
@@ -2047,14 +2218,14 @@ def _catalogue_selection(
     Returns
     -------
     selection : list of (X, nder)
-        The selected pairs without duplicates, in the order V, A, T, S, P and
+        The selected pairs without duplicates, in the order S, P, V, A, T and
         increasing derivatives.
     title : str
         Default title of the catalogue, e.g.
-        ``'Available Operators: X = V, A, T with 1, 2 derivatives'`` or
+        ``'Available Operators: X = S, P, V, A, T with 0, 1, 2 derivatives'`` or
         ``'Available Operators: V with 2, 3 derivatives; A with 3 derivatives'``.
     name : str
-        Default file name (without extension), e.g. ``'operator_catalogue_VAT_nder12'``
+        Default file name (without extension), e.g. ``'operator_catalogue_SPVAT_nder012'``
         or ``'operator_catalogue_V2_V3_A3'``.
 
     Raises
@@ -2066,38 +2237,11 @@ def _catalogue_selection(
         raise ValueError("Select the operators either with keys or with X and nder, not both.")
 
     if keys is not None:
-        # A single string may hold one key ("V2") or several ("V2,V3" or "V2 V3").
-        keys = [keys] if isinstance(keys, str) else list(keys)
-        tokens = [token for key in keys for token in re.split(r"[,\s]+", str(key).strip()) if token]
-        if not tokens:
-            raise ValueError("keys is empty: give at least one key such as 'V2'.")
-        pairs = []
-        for token in tokens:
-            match = re.fullmatch(r"([VATSP])(\d+)", token.upper())
-            if match is None or int(match.group(2)) < 1:
-                raise ValueError(
-                    f"Invalid key {token!r}: expected a Dirac structure (V, A, T, S or P) followed by "
-                    "the number of derivatives (at least 1), e.g. 'V2'."
-                )
-            pairs.append((match.group(1), int(match.group(2))))
+        pairs = _parse_keys(keys)
     else:
-        # Dirac structures: every letter of every item, ignoring commas and spaces.
-        X = _CATALOGUE_DEFAULT_X if X is None else X
-        letters = X if isinstance(X, str) else "".join(str(x) for x in X)
-        X_list = [c for c in letters.upper() if c not in ", "]
-        invalid = sorted({c for c in X_list if c not in _X_ORDER})
-        if invalid or not X_list:
-            raise ValueError(f"X must be made of V, A, T, S and P, got {X!r}.")
-
-        # Numbers of derivatives: positive integers (bool is excluded, although it is an int).
-        nder = _CATALOGUE_DEFAULT_NDER if nder is None else nder
-        nder_list = [nder] if isinstance(nder, (int, np.integer)) else list(nder)
-        if not nder_list or any(
-            isinstance(d, bool) or not isinstance(d, (int, np.integer)) or d < 1 for d in nder_list
-        ):
-            raise ValueError(f"nder must be a positive integer or a list of them, got {nder!r}.")
-
-        pairs = [(x, int(d)) for x in X_list for d in nder_list]
+        X_list = _parse_X(_CATALOGUE_DEFAULT_X if X is None else X)
+        nder_list = _parse_nder(_CATALOGUE_DEFAULT_NDER if nder is None else nder)
+        pairs = [(x, d) for x in X_list for d in nder_list]
 
     # Drop duplicates and sort: the same selection then gives the same title and file name
     # however it was written (as keys or as X and nder, in any order).
@@ -2199,10 +2343,11 @@ def operator_show(
     H(4) irrep / multiplicity block and lists every operator with its
     symbolic expression and kinematic factor.
 
-    By default only the V, A and T operators with one and two derivatives are
-    written; the operators with more derivatives take most of the time (computing
-    their kinematic factors with SymPy), so they are written only on request, with
-    *X* and *nder* or with *keys*.  Operator IDs are those of the database and never
+    By default the operators of every Dirac structure (S, P, V, A, T) with zero, one
+    and two derivatives are written (IDs 1–336 of the bundled database); the
+    operators with more derivatives take most of the time (computing their kinematic
+    factors with SymPy), so they are written only on request, with *X* and *nder* or
+    with *keys*.  Operator IDs are those of the database and never
     change: a partial catalogue simply skips some of them.  Sections always come in
     database order (increasing ID), whatever the order of the selection.
 
@@ -2218,13 +2363,13 @@ def operator_show(
     title : str, optional
         Title printed on the first page of the PDF.  Defaults to a string
         stating the selected operators, e.g.
-        ``"Available Operators: X = V, A, T with 1, 2 derivatives"``.
+        ``"Available Operators: X = S, P, V, A, T with 0, 1, 2 derivatives"``.
     author : str, optional
         Author string printed on the title page (default ``"E.T."``).
     doc_name : str, optional
         Path (without extension) of the generated ``.tex`` / ``.pdf``
         files; its folder must exist.  Defaults to a name stating the selected
-        operators, in the working directory: ``"operator_catalogue_VAT_nder12"``
+        operators, in the working directory: ``"operator_catalogue_SPVAT_nder012"``
         by default, ``"operator_catalogue_V2_V3_A3"`` for ``keys=["V2", "V3", "A3"]``.
     verbose : bool, optional
         Print the selection, progress bars over the operators and progress
@@ -2238,10 +2383,10 @@ def operator_show(
         Remove the intermediate ``.tex`` and auxiliary LaTeX files after PDF
         generation (default ``True``).
     X : str or iterable of str, optional (keyword only)
-        Dirac structures to include, among ``'V'``, ``'A'``, ``'T'``, ``'S'``,
-        ``'P'`` (default ``('V', 'A', 'T')``; ``'VA'`` is the same as ``['V', 'A']``).
+        Dirac structures to include, among ``'S'``, ``'P'``, ``'V'``, ``'A'``,
+        ``'T'`` (default: all five; ``'VA'`` is the same as ``['V', 'A']``).
     nder : int or iterable of int, optional (keyword only)
-        Numbers of derivatives to include (default ``(1, 2)``).  The catalogue
+        Numbers of derivatives to include (default ``(0, 1, 2)``).  The catalogue
         holds every combination of *X* and *nder*.
     keys : str or iterable of str, optional (keyword only)
         Explicit groups ``'<X><number of derivatives>'``, e.g. ``["V2", "V3", "A3"]``
@@ -2267,8 +2412,9 @@ def operator_show(
 
     Examples
     --------
-    >>> operator_show(show=False)                                # V, A, T with 1, 2 derivatives
-    >>> operator_show(X="V", nder=[1, 2, 3], show=False)         # vector operators, up to 3 derivatives
+    >>> operator_show(show=False)                                # S, P, V, A, T with 0, 1, 2 derivatives
+    >>> operator_show(X="V", nder=[1, 2, 3], show=False)         # vector operators with 1 to 3 derivatives
+    >>> operator_show(nder=0, show=False)                        # the local bilinears ψ̄ Γ ψ
     >>> operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # a selection, on all cores
     """
 
@@ -2484,7 +2630,10 @@ def write_operator(group, operator: Operator) -> None:
         op_group.attrs["id"] = operator.id
 
     op_group.attrs["X"] = operator.X
-    op_group.create_dataset("cgmat", data=operator.cgmat, compression="gzip")
+    # The 0-index cgmat of an operator without Lorentz indices (e.g. ψ̄ψ) is stored as a
+    # scalar dataset, for which HDF5 allows no compression filter.
+    compression = "gzip" if np.ndim(operator.cgmat) > 0 else None
+    op_group.create_dataset("cgmat", data=operator.cgmat, compression=compression)
 
     # gamma_pol_index selects which of the six polarisation projectors was
     # used to compute K (see Operator.set_polarization_matrix); it changes
@@ -2632,16 +2781,12 @@ def h5_to_operator_list(file_path: str) -> list[Operator]:
 ###################### Execution as Main ############################
 
 if __name__ == "__main__":
-    # Default to max_n=4, matching the bundled operator database shipped with the package.
-    # Override by passing an integer as the first CLI argument: python moments_operator.py 3
-    # Pass "SP" as the second CLI argument to also generate S and P operators.
-    max_n = 4
-    include_SP = False
+    # Default to max_nder=3, matching the bundled operator database shipped with the package.
+    # Override by passing an integer as the first CLI argument: python moments_operator.py 2
+    max_nder = 3
     if len(sys.argv) > 1:
         try:
-            max_n = int(sys.argv[1])
+            max_nder = int(sys.argv[1])
         except ValueError:
-            pass
-    if len(sys.argv) > 2 and sys.argv[2].upper() == "SP":
-        include_SP = True
-    make_operator_database(operator_folder="operator_database", max_n=max_n, verbose=True, include_SP=include_SP)
+            print(f"\nSpecified max_nder was {sys.argv[1]}, proceeding with max_nder={max_nder}\n")
+    make_operator_database(operator_folder="operator_database", max_nder=max_nder, verbose=True)

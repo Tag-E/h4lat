@@ -3,15 +3,16 @@
 h4lat-catalogue
     Write the PDF catalogue of a selection of the operators of an operator database (by
     default the bundled one), with the expression, kinematic factor, C-parity, trace
-    condition and index symmetry of every operator.  By default it holds the V, A and T
-    operators with one and two derivatives; choose others with -X / --nder or --keys.
+    condition and index symmetry of every operator.  By default it holds the S, P, V, A and
+    T operators with zero, one and two derivatives; choose others with -X / --nder or --keys.
     Wraps :func:`h4lat.operator_show`; needs pylatex (``pip install "h4lat[full]"``) and a
     LaTeX installation (latexmk or pdflatex).
 
 Examples::
 
-    h4lat-catalogue                           # V, A, T with 1, 2 derivatives -> ./operator_catalogue_VAT_nder12.pdf
-    h4lat-catalogue -X V --nder 1 2 3         # vector operators with up to 3 derivatives
+    h4lat-catalogue                           # S, P, V, A, T, 0-2 derivatives -> operator_catalogue_SPVAT_nder012.pdf
+    h4lat-catalogue -X V --nder 1 2 3         # vector operators with 1 to 3 derivatives
+    h4lat-catalogue --nder 0                  # the local bilinears ψ̄ Γ ψ
     h4lat-catalogue --keys V2 V3 A3 -j        # a selection (X + number of derivatives), on all cores
     h4lat-catalogue -o docs/ops.pdf --open    # custom path, open the PDF when done
     h4lat-catalogue --database my_operators   # catalogue of a custom operator database
@@ -25,18 +26,18 @@ from pathlib import Path
 # Shown at the end of --help.
 _EPILOG = """\
 selection:
-  The operators are selected by Dirac structure X (V, A, T, S, P) and number of
+  The operators are selected by Dirac structure X (S, P, V, A, T) and number of
   derivatives, either as a product (-X V A --nder 1 2 3) or as keys made of X followed
   by the number of derivatives (--keys V2 V3 A3: 'V2' is the vector operators with two
   derivatives, i.e. three Lorentz indices).  Operator IDs are those of the database: a
   partial catalogue skips some of them.  The default file name and title state the
-  selection, e.g. operator_catalogue_VAT_nder12.pdf or operator_catalogue_V2_V3_A3.pdf.
+  selection, e.g. operator_catalogue_SPVAT_nder012.pdf or operator_catalogue_V2_V3_A3.pdf.
 
 examples:
-  h4lat-catalogue                           # V, A, T with 1, 2 derivatives
-  h4lat-catalogue -X V --nder 1 2 3         # vector operators with up to 3 derivatives
-  h4lat-catalogue --keys V2 V3 A3 -j        # a selection, kinematic factors on all cores
-  h4lat-catalogue -X V A T --nder 1 2 3 -j 8  # the whole bundled database, on 8 processes
+  h4lat-catalogue                           # S, P, V, A, T with 0, 1, 2 derivatives
+  h4lat-catalogue -X V --nder 1 2 3         # vector operators with 1 to 3 derivatives
+  h4lat-catalogue --keys S0 P0 V2 -j        # a selection, kinematic factors on all cores
+  h4lat-catalogue --nder 0 1 2 3 -j 8       # the whole bundled database, on 8 processes
 """
 
 
@@ -74,19 +75,19 @@ def catalogue_main(argv=None) -> int:
         "-X",
         nargs="+",
         metavar="X",
-        help="Dirac structures among V A T S P (default: V A T)",
+        help="Dirac structures among S P V A T (default: all of them)",
     )
     selection.add_argument(
         "--nder",
         nargs="+",
         metavar="N",
-        help="numbers of derivatives (default: 1 2)",
+        help="numbers of derivatives (default: 0 1 2)",
     )
     selection.add_argument(
         "--keys",
         nargs="+",
         metavar="KEY",
-        help="groups given as X followed by the number of derivatives, e.g. V2 V3 A3 (not with -X/--nder)",
+        help="groups given as X followed by the number of derivatives, e.g. S0 V2 A3 (not with -X/--nder)",
     )
 
     parser.add_argument(
