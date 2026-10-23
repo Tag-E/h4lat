@@ -1,0 +1,51 @@
+# GitHub Actions workflow: lint the code and run the test suite on GitHub's servers.
+# It runs for every push to main, for every pull request, and on demand ("Run workflow" in the Actions tab).
+# The result is shown next to each commit and in the "tests" badge of the README.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch cancels the run still going for the previous one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The jobs only need to read the repository
+permissions:
+  contents: read
+
+jobs:
+  # The same black + ruff checks as the local pre-commit hooks (.pre-commit-config.yaml)
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7 # get the repository
+      - uses: actions/setup-python@v7 # install Python
+        with:
+          python-version: "3.13"
+      - run: python -m pip install pre-commit
+      - run: pre-commit run --all-files --show-diff-on-failure
+
+  # The whole test suite (about 4 minutes) on every supported Python version
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # finish the other Python versions even if one fails
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip # reuse downloaded packages between runs
+          cache-dependency-path: pyproject.toml
+      # A regular (not editable) install, as a user would get it: the tests then also check that the bundled
+      # data are installed with the package. "dev" = pytest and all optional dependencies (numba, pylatex, …).
+      - run: python -m pip install ".[dev]"
+      # The tests that need LaTeX skip themselves, since the runner has no latexmk/pdflatex
+      - run: python -m pytest

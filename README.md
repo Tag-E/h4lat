@@ -1,5 +1,10 @@
 # h4lat
 
+[![tests](https://github.com/Tag-E/h4lat/actions/workflows/tests.yml/badge.svg)](https://github.com/Tag-E/h4lat/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/h4lat)](https://pypi.org/project/h4lat/)
+[![Python versions](https://img.shields.io/pypi/pyversions/h4lat)](https://pypi.org/project/h4lat/)
+[![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](https://github.com/Tag-E/h4lat/blob/main/LICENSE)
+
 **Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)**
 
 ---
@@ -23,6 +28,7 @@
 - [References](#references)
 - [Acknowledgements](#acknowledgements)
 - [How to cite](#how-to-cite)
+- [Contributing and changelog](#contributing-and-changelog)
 - [License](#license)
 
 ---
@@ -90,26 +96,36 @@ pip install "h4lat[operators]"      # + pandas, gvar, h5py, IPython
 pip install "h4lat[parallel]"       # + numba, to compute new CG coefficients on all cores
 ```
 
+h4lat needs Python ≥ 3.11.  To install a given release, or the latest code, directly from GitHub:
+
+```bash
+pip install "h4lat @ git+https://github.com/Tag-E/h4lat.git@v0.2.0"   # release 0.2.0
+pip install "h4lat[full] @ git+https://github.com/Tag-E/h4lat.git"    # latest code on main
+```
+
 For development:
 
 ```bash
 git clone https://github.com/Tag-E/h4lat.git
 cd h4lat
-pip install -e ".[full]"
+pip install -e ".[dev]"             # editable install with all extras and pytest
 ```
+
+See [CONTRIBUTING.md](https://github.com/Tag-E/h4lat/blob/main/CONTRIBUTING.md) for the tests, the code
+style and the rules for the bundled data.
 
 ---
 
 ## Examples
 
-Jupyter notebooks with worked examples are provided in the [`examples/`](examples/) folder:
+Jupyter notebooks with worked examples are provided in the [`examples/`](https://github.com/Tag-E/h4lat/tree/main/examples) folder:
 
 | Notebook | Description |
 |----------|-------------|
-| [`quickstart.ipynb`](examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
-| [`operator_algebra.ipynb`](examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
-| [`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) | Listing of the most relevant operators of the bundled database — V, A and T with one and two derivatives (IDs 25–80 and 113–336) — organised by number of derivatives, Dirac structure, and H(4) irrep; all the operators are in the [PDF catalogue](#operator-catalogue-pdf) |
-| [`paper_operators.ipynb`](examples/paper_operators.ipynb) | Operators used in published works, selected with `get_paper_operators` by INSPIRE texkey or DOI, and the code that builds them from the operators of the bundled database |
+| [`quickstart.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/quickstart.ipynb) | Mirrors this README — tensor-product decomposition, CG coefficients, operator construction, and the bundled database |
+| [`operator_algebra.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
+| [`operator_catalogue.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_catalogue.ipynb) | Listing of the most relevant operators of the bundled database — V, A and T with one and two derivatives (IDs 25–80 and 113–336) — organised by number of derivatives, Dirac structure, and H(4) irrep; all the operators are in the [PDF catalogue](#operator-catalogue-pdf) |
+| [`paper_operators.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/paper_operators.ipynb) | Operators used in published works, selected with `get_paper_operators` by INSPIRE texkey or DOI, and the code that builds them from the operators of the bundled database |
 
 A Google Colab notebook with some minimal working examples can be found [here](https://colab.research.google.com/drive/1KFnE0hi4XDNyo2Kg8iDKSSEqY1YQkPGZ?usp=sharing).
 
@@ -351,7 +367,7 @@ operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # n_jobs=None: 
 
 In a script, call it with `n_jobs > 1` under `if __name__ == "__main__":`, as usual with
 multiprocessing.  If you have no LaTeX installation, the
-[`operator_catalogue.ipynb`](examples/operator_catalogue.ipynb) notebook shows the most
+[`operator_catalogue.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_catalogue.ipynb) notebook shows the most
 relevant operators (V, A and T with one and two derivatives), and its `show_group` function
 lists any other group.  With a development install, run `pip install -e .` again after
 pulling this change so that the command is registered.
@@ -390,8 +406,8 @@ for op in ops:
 
 Each operator is a linear combination of operators of the bundled database
 (`Operator_from_database(id)`), built with the operator arithmetic of
-[`operator_algebra.ipynb`](examples/operator_algebra.ipynb).  The notebook
-[`paper_operators.ipynb`](examples/paper_operators.ipynb) shows the code that builds the
+[`operator_algebra.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_algebra.ipynb).  The notebook
+[`paper_operators.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/paper_operators.ipynb) shows the code that builds the
 operators of each paper.  Combining the catalogue operators differently gives the operator
 basis of other works.
 
@@ -476,20 +492,37 @@ This library was developed with the assistance of [Claude](https://www.anthropic
 
 ## How to cite
 
-If you use `h4lat` in your research, please cite the repository:
+If you use `h4lat` in your research, please cite it, and give the version you used (`h4lat.__version__`),
+since operator IDs and conventions can change between versions (see the
+[changelog](https://github.com/Tag-E/h4lat/blob/main/CHANGELOG.md)):
 
 ```bibtex
-@misc{Taggi_h4lat,
+@software{Taggi_h4lat,
   author  = {Taggi, Emilio},
   title   = {{h4lat}: {C}lebsch-{G}ordan coefficients and lattice operators for the hypercubic group {H(4)}},
   year    = {2026},
+  version = {0.2.0},
   url     = {https://github.com/Tag-E/h4lat}
 }
 ```
+
+The "Cite this repository" button on the GitHub page gives the same reference in APA and BibTeX form (from
+[`CITATION.cff`](https://github.com/Tag-E/h4lat/blob/main/CITATION.cff)).
+
+---
+
+## Contributing and changelog
+
+Questions, bug reports and suggestions are welcome as
+[GitHub issues](https://github.com/Tag-E/h4lat/issues).
+[CONTRIBUTING.md](https://github.com/Tag-E/h4lat/blob/main/CONTRIBUTING.md) explains how to set up a
+development install and run the tests, and
+[CHANGELOG.md](https://github.com/Tag-E/h4lat/blob/main/CHANGELOG.md) lists the changes of each release.
 
 ---
 
 ## License
 
-GNU General Public License v3 — see [LICENSE](LICENSE).
+GNU General Public License v3.0 or later: see
+[LICENSE](https://github.com/Tag-E/h4lat/blob/main/LICENSE).
 All derivative works must be distributed under the same open-source terms.

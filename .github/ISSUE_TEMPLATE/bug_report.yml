@@ -1,0 +1,45 @@
+# GitHub issue form (https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms):
+# GitHub renders each entry of `body` as a field of the "New issue" page and writes the answers into the issue.
+name: Bug report
+description: Something does not work, or a result (CG coefficient, operator, K, C-parity, …) looks wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. A short example that reproduces it helps the most.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you do, what did you get, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Code to reproduce
+      description: A minimal piece of code, with the full error message if there is one.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: physics
+    attributes:
+      label: How did you check the expected result?
+      description: For physics results, e.g. a reference, a hand calculation or another code. Leave empty if it does not apply.
+  - type: input
+    id: version
+    attributes:
+      label: h4lat version
+      description: Output of `python -c "import h4lat; print(h4lat.__version__)"`
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and operating system
+      placeholder: "Python 3.12, Ubuntu 24.04"
+    validations:
+      required: true

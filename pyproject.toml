@@ -1,24 +1,57 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+# setuptools >= 77 understands the SPDX licence expression below (PEP 639)
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "h4lat"
+# Bump for every release, together with CHANGELOG.md, CITATION.cff and the README (see CONTRIBUTING.md,
+# "Making a release"); the release tag must be "v" + this version
 version = "0.2.0"
 description = "Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)"
 readme = "README.md"
-license = { file = "LICENSE" }
-classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-]
+# The module headers grant "version 3 of the License, or (at your option) any later version"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [{ name = "Emilio Taggi", email = "emilio.taggi@gmail.com" }]
 requires-python = ">=3.11"
+keywords = [
+    "lattice QCD",
+    "hypercubic group",
+    "H(4)",
+    "Clebsch-Gordan coefficients",
+    "group theory",
+    "lattice operators",
+    "parton distribution functions",
+    "moments of PDFs",
+]
+# PyPI trove classifiers (https://pypi.org/classifiers/); the licence is given by `license` above
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 
 dependencies = [
     "numpy",
     "sympy",
     "tqdm",
 ]
+
+# Links shown in the sidebar of the PyPI page. (A [table] header takes every key below it, so the plain
+# [project] keys must all come before this line.)
+[project.urls]
+Homepage = "https://github.com/Tag-E/h4lat"
+Source = "https://github.com/Tag-E/h4lat"
+Issues = "https://github.com/Tag-E/h4lat/issues"
+Changelog = "https://github.com/Tag-E/h4lat/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Full feature set (operator construction, PDF output, plots, HDF5 I/O)

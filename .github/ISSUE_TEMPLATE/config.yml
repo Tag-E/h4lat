@@ -1,0 +1,2 @@
+# Options of the "New issue" page: besides the two forms, an empty issue can still be opened
+blank_issues_enabled: true

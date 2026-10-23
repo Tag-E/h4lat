@@ -1,0 +1,18 @@
+# GitHub issue form for suggestions and questions (same syntax as bug_report.yml)
+name: Feature request or question
+description: Suggest a new feature or operator, or ask a question about the package or the physics.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: request
+    attributes:
+      label: What would you like to do or know?
+      description: For a feature, the problem it would solve. For new operators of a paper, the reference (INSPIRE texkey, DOI or arXiv number).
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: Optional. Code you tried, or how you imagine using the feature.
+      render: python

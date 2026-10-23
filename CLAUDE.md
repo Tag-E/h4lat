@@ -117,7 +117,9 @@ Don't build it at import time.
   They define which products are bundled.
 - User-visible changes usually come with updates to the README, the CLI help (`cli.py`) and the affected example
   notebooks, which are then re-executed. The README records breaking changes as dated notes ("Until October
-  2026 …").
+  2026 …"), and `CHANGELOG.md` lists them under "Unreleased".
+- The version number appears in `pyproject.toml`, `CITATION.cff` (`version`, `date-released`), `CHANGELOG.md`
+  and the README (BibTeX entry and the `git+…@vX.Y.Z` install line). Change them together.
 
 ## Conventions
 
@@ -129,5 +131,9 @@ Don't build it at import time.
   h5py) nor the group theory: say what a call does and why it's needed.
 - Module files start with a `####` banner and the GPL-3 header. Docstrings are numpy-style and use Unicode math
   (ψ̄, γ_μ, ⊗), and comments explain the physics.
+- **Releases:** bump the version (see above), turn "Unreleased" in `CHANGELOG.md` into the new version, then
+  publish a GitHub release with tag `vX.Y.Z`. `.github/workflows/publish.yml` checks that the tag matches
+  `pyproject.toml` and uploads to PyPI (Trusted Publishing), and Zenodo archives the release.
+  `.github/workflows/tests.yml` runs pre-commit and pytest (Python 3.11–3.14) on every push and PR.
 - `h4lat-catalogue` writes `operator_catalogue_*.pdf` to the working directory (gitignored). `*.ipynb` files are
   gitignored except `examples/*.ipynb`, and so are `*.txt` files in the repository root (local notes).
