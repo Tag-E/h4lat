@@ -1,8 +1,8 @@
 # Citation metadata of h4lat (https://citation-file-format.github.io).
 # GitHub reads this file for the "Cite this repository" button, and Zenodo for the record of each release.
 # Update `version` and `date-released` at every release.
-# After the first Zenodo archive, add the concept DOI (the one that covers all versions):
-#   doi: 10.5281/zenodo.XXXXXXX
+# `doi` is the Zenodo concept DOI, which covers all versions and resolves to the latest one; each release also
+# gets its own DOI on Zenodo (e.g. 10.5281/zenodo.23598682 for v0.2.0).
 cff-version: 1.2.0
 message: "If you use h4lat in your research, please cite it as below."
 type: software
@@ -20,6 +20,7 @@ authors:
     email: emilio.taggi@gmail.com
 version: 0.2.0
 date-released: "2026-10-23"
+doi: 10.5281/zenodo.23598681
 license: GPL-3.0-or-later
 repository-code: "https://github.com/Tag-E/h4lat"
 url: "https://github.com/Tag-E/h4lat"

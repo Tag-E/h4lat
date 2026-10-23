@@ -4,6 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/h4lat)](https://pypi.org/project/h4lat/)
 [![Python versions](https://img.shields.io/pypi/pyversions/h4lat)](https://pypi.org/project/h4lat/)
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](https://github.com/Tag-E/h4lat/blob/main/LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23598681.svg)](https://doi.org/10.5281/zenodo.23598681)
 
 **Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)**
 
@@ -502,11 +503,15 @@ since operator IDs and conventions can change between versions (see the
   title   = {{h4lat}: {C}lebsch-{G}ordan coefficients and lattice operators for the hypercubic group {H(4)}},
   year    = {2026},
   version = {0.2.0},
+  doi     = {10.5281/zenodo.23598681},
   url     = {https://github.com/Tag-E/h4lat}
 }
 ```
 
-The "Cite this repository" button on the GitHub page gives the same reference in APA and BibTeX form (from
+The DOI [10.5281/zenodo.23598681](https://doi.org/10.5281/zenodo.23598681) covers all versions of h4lat and
+leads to the latest one.  Each release also has its own DOI, listed on the
+[Zenodo page](https://doi.org/10.5281/zenodo.23598681).  The "Cite this repository" button on the GitHub page
+gives the same reference in APA and BibTeX form (from
 [`CITATION.cff`](https://github.com/Tag-E/h4lat/blob/main/CITATION.cff)).
 
 ---
