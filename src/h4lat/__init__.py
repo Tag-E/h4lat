@@ -11,14 +11,6 @@ Quick start
 
 import importlib.metadata as _metadata
 
-from .kinematic_data import (
-    Gamma_pol,
-    Gamma_pol_list,
-    Gamma_pol_s,
-    Gamma_pol_s_list,
-    den_K,
-    den_K_list,
-)
 from .cg_calculator import (
     _BUNDLED_OPERATOR_DATABASE as OPERATOR_DATABASE,
 )
@@ -34,11 +26,18 @@ from .cg_calculator import (
     latex_print_multiplicities,
     n_ele_h4,
     n_ele_s4,
-    # constants
     n_rep,
     print_CGmat,
     rep_dim_list,
     rep_label_list,
+)
+from .kinematic_data import (
+    Gamma_pol,
+    Gamma_pol_list,
+    Gamma_pol_s,
+    Gamma_pol_s_list,
+    den_K,
+    den_K_list,
 )
 from .moments_operator import (
     AVAILABLE_PAPERS,
@@ -53,9 +52,9 @@ from .moments_operator import (
     cg_remapping_T,
     decomposition_analysis,
     diracO_from_cgmat,
+    get_op_selection,
     get_OperatorDict,
     get_OperatorList,
-    get_op_selection,
     get_paper_operators,
     h5_to_operator_list,
     index_symm,

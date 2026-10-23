@@ -107,6 +107,9 @@ Don't build it at import time.
 - `examples/paper_operators.ipynb` shows the source of `get_paper_operators`, and
   `test_paper_operators_notebook_code` checks that every ```` ```python ```` block in its markdown cells is a
   line-by-line slice of the function (indentation ignored). Edit both together.
+- The operator definitions of `get_op_selection` and `get_paper_operators` are hand-aligned tables inside
+  `# fmt: off` / `# fmt: on`. Keep new entries inside that region: black would otherwise reformat them and break
+  `test_paper_operators_notebook_code`.
 - The basis order of the 6-dim irreps in `cg_calculator.py` (pairs 12, 13, 23, 14, 24, 34) must match
   `_SIGMA_PAIRS` in `moments_operator.py`.
 - New public names must be imported in `src/h4lat/__init__.py` **and** listed in `__all__`. Tests check this.

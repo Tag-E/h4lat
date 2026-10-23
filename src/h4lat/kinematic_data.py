@@ -119,10 +119,7 @@ Gamma_pol_list: list = [sym.Rational(1, 2) * (Id_4 + gamma4) @ (Id_4 - I * ga @ 
 See the module docstring for the index → pair mapping.
 """
 
-Gamma_pol_s_list: list = [
-    sym.Symbol(f"Gamma_pol_{label}")
-    for label in _gamma_pol_pair_labels
-]
+Gamma_pol_s_list: list = [sym.Symbol(f"Gamma_pol_{label}") for label in _gamma_pol_pair_labels]
 """Symbolic SymPy ``Symbol`` placeholders for each polarisation projector.
 
 ``Gamma_pol_s_list[k]`` is the symbol ``Gamma_pol_<ab>`` corresponding to
@@ -169,10 +166,7 @@ pslash_s = sym.Symbol(r"\cancel{p}")
 # We pre-compute one entry per projector so that Kfactor_from_diracO
 # can look up the right denominator without recomputing it.
 
-den_K_list: list = [
-    2 * E * sym.trace(gp * (-I * pslash + mN * Id_4)).simplify(rational=True)
-    for gp in Gamma_pol_list
-]
+den_K_list: list = [2 * E * sym.trace(gp * (-I * pslash + mN * Id_4)).simplify(rational=True) for gp in Gamma_pol_list]
 """Kinematic denominators, one per polarisation projector.
 
 ``den_K_list[k]`` = 2E · Tr[``Gamma_pol_list[k]`` · (−i p̸ + m_N)],

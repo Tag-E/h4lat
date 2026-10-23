@@ -272,7 +272,7 @@ class Operator:
 
         # Discrete symmetry properties.
         self.C = C_parity(cgmat, X)
-        self.tr = trace_symm(cgmat = cgmat, X = X)
+        self.tr = trace_symm(cgmat=cgmat, X=X)
         self.symm = index_symm(cgmat)
         if X == 'T':
             # For tensorial operators the first two indices carry σ_{μν}, which
@@ -1470,6 +1470,10 @@ def get_op_selection(n_der: int) -> list[Operator]:
     ValueError
         If n_der is not 1, 2, or 3.
     """
+    # The operator definitions below are written as a table: the coefficients and the comments
+    # that give the index structure of each operator are aligned in columns.  "fmt: off" stops
+    # black from collapsing the columns and splitting the long lines, up to "fmt: on".
+    # fmt: off
     if n_der == 1:
         # Vector
         # irrep (3,1)
@@ -1594,6 +1598,7 @@ def get_op_selection(n_der: int) -> list[Operator]:
         opT2p.id = "T2'"
 
         return [opV, opA, opT1, opT2, opT1p, opT2p]
+    # fmt: on
 
     raise ValueError(f"n_der must be 1, 2, or 3, got {n_der}.")
 
@@ -1696,7 +1701,11 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
     # The comments give the index structure of each operator, up to its normalisation.  The first
     # index is that of γ_μ for V and A, the first two are those of σ_{μν} for T, and the others are
     # those of the derivatives; {...} is the symmetric combination of the indices in it.
+    # The definitions are aligned in columns, and examples/paper_operators.ipynb shows them as they
+    # are written here (test_paper_operators_notebook_code checks it): "fmt: off" stops black from
+    # reformatting them, up to "fmt: on".
 
+    # fmt: off
     if paper == "Burger:2021knd":
         # a2: Axial - irrep (4,3)
         op1 = Operator_from_database(181)  # = {2,3,4}
@@ -1890,6 +1899,7 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
         opv4.id = "v_4"
 
         return [opv2a, opv2b, opv3, opv4]
+    # fmt: on
 
 
 def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
@@ -2016,17 +2026,19 @@ def irrep_count_table(n_der: int, split: bool = False) -> None:
         print(header)
         print(sep)
         for row in range(half):
-            left  = row
+            left = row
             right = row + half
-            l_label, l_count, l_diff = rep_latex_names[left],  counts[left],  diff[left]
+            l_label, l_count, l_diff = rep_latex_names[left], counts[left], diff[left]
             r_label, r_count, r_diff = rep_latex_names[right], counts[right], diff[right]
-            left_col  = f"{l_label:<{col_w}} {l_count:>5}  {_diff_str(l_diff):>5}"
+            left_col = f"{l_label:<{col_w}} {l_count:>5}  {_diff_str(l_diff):>5}"
             right_col = f"{r_label:<{col_w}} {r_count:>5}  {_diff_str(r_diff):>5}"
             print(left_col + gap + right_col)
         print(sep)
 
 
-def decomposition_analysis(X: str, n_der: int, operator_dict: dict | None = None, verbose: bool = False, print_count_table: bool = False):
+def decomposition_analysis(
+    X: str, n_der: int, operator_dict: dict | None = None, verbose: bool = False, print_count_table: bool = False
+):
     """Analyse the irrep content of the tensor product irrep(X) ⊗ (4,1)^{n_der}.
 
     For each irrep appearing in the decomposition the function reports:
@@ -2420,10 +2432,7 @@ def operator_show(
 
     # pylatex is an optional dependency; raise a helpful error if missing
     if not _PYLATEX_AVAILABLE:
-        raise ImportError(
-            "pylatex is required for operator_show(). "
-            "Install it with: pip install pylatex"
-        )
+        raise ImportError("pylatex is required for operator_show(). Install it with: pip install pylatex")
     start = time.time()
 
     # The selected (X, number of derivatives) groups, and the default title / file name
@@ -2511,13 +2520,13 @@ def operator_show(
 
             # Collect per-operator properties to determine the block-wide value
             # (or flag it as 'mixed' when operators in the block disagree)
-            C_list    = [op.C    for op in operators_dict[(n, x)][(irrep, imul)]]
-            tr_list   = [op.tr   for op in operators_dict[(n, x)][(irrep, imul)]]
+            C_list = [op.C for op in operators_dict[(n, x)][(irrep, imul)]]
+            tr_list = [op.tr for op in operators_dict[(n, x)][(irrep, imul)]]
             symm_list = [op.symm for op in operators_dict[(n, x)][(irrep, imul)]]
 
             # If every operator shares the same value use it; otherwise mark 'mixed'
-            C    = C_list[0]    if all_equal(C_list)    else 'mixed'
-            tr   = tr_list[0]   if all_equal(tr_list)   else 'mixed'
+            C = C_list[0] if all_equal(C_list) else 'mixed'
+            tr = tr_list[0] if all_equal(tr_list) else 'mixed'
             symm = symm_list[0] if all_equal(symm_list) else 'Mixed Symmetry'
 
             # Subsection title encodes the irrep, block index, and shared symmetries
@@ -2537,7 +2546,7 @@ def operator_show(
 
                 # Operator expression row
                 agn.append(
-                    r"\!"*20
+                    r"\!" * 20
                     + r" O_{}^{} &= {} \\".format(
                         op.index_block,
                         '{' + f"{x}{irrep},{imul}" + '}',
@@ -2547,7 +2556,7 @@ def operator_show(
 
                 # Kinematic factor row (triple backslash gives extra vertical space)
                 agn.append(
-                    r"\!"*20
+                    r"\!" * 20
                     + r" K_{}^{} &= {} \\\\\\".format(
                         op.index_block,
                         '{' + f"{x}{irrep},{imul}" + '}',
@@ -2684,11 +2693,7 @@ def read_operator(group) -> Operator:
     # int64 array, and tuple(...)-ing it directly would leave np.int64
     # elements instead of plain ints (unlike block/index_block below, which
     # were already cast).
-    irrep = (
-        None
-        if op_group.attrs.get("irrep_is_none", False)
-        else tuple(int(x) for x in op_group.attrs["irrep"])
-    )
+    irrep = None if op_group.attrs.get("irrep_is_none", False) else tuple(int(x) for x in op_group.attrs["irrep"])
     block = None if op_group.attrs.get("block_is_none", False) else int(op_group.attrs["block"])
     index_block = None if op_group.attrs.get("index_block_is_none", False) else int(op_group.attrs["index_block"])
 

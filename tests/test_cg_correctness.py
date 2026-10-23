@@ -306,7 +306,7 @@ def test_cgmat_from_block_gives_exact_c_parity():
 def test_bundled_single_irreps_have_the_identity_as_cg_matrix(irreps):
     """The "product" of one irrep is the irrep itself: one copy, whose CG matrix is the identity (Schur's lemma)."""
     cg = cg_calc(*irreps, verbose=False)
-    (irep, blocks), = cg.cg_dict.items()
+    [(irep, blocks)] = cg.cg_dict.items()  # exactly one (irrep, blocks) pair
     assert rep_label_list[irep] == irreps[0] and len(blocks) == 1
     assert np.array_equal(blocks[0], np.eye(irreps[0][0]))
 
