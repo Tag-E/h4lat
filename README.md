@@ -1,8 +1,8 @@
 # h4lat
 
 [![tests](https://github.com/Tag-E/h4lat/actions/workflows/tests.yml/badge.svg)](https://github.com/Tag-E/h4lat/actions/workflows/tests.yml)
-[![PyPI](https://img.shields.io/pypi/v/h4lat)](https://pypi.org/project/h4lat/)
-[![Python versions](https://img.shields.io/pypi/pyversions/h4lat)](https://pypi.org/project/h4lat/)
+[![PyPI](https://img.shields.io/pypi/v/h4lat?label=PyPI)](https://pypi.org/project/h4lat/)
+[![Python versions](https://img.shields.io/pypi/pyversions/h4lat?label=Python)](https://pypi.org/project/h4lat/)
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](https://github.com/Tag-E/h4lat/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23598681.svg)](https://doi.org/10.5281/zenodo.23598681)
 
