@@ -102,7 +102,7 @@ def catalogue_main(argv=None) -> int:
     )
     parser.add_argument("--title", help="title of the first page (default: states the selected operators)")
     parser.add_argument("--author", default="E.T.", help="author on the first page (default: E.T.)")
-    parser.add_argument("--open", action="store_true", help="open the PDF with xdg-open when done")
+    parser.add_argument("--open", action="store_true", help="open the PDF with the default viewer when done")
     parser.add_argument("--keep-tex", action="store_true", help="keep the generated .tex file")
     parser.add_argument("-q", "--quiet", action="store_true", help="only report errors (no progress bars)")
     args = parser.parse_args(argv)

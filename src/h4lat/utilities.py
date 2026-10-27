@@ -27,6 +27,7 @@ heavy dependencies so that the module can be imported in any context.
 """
 
 import itertools as it
+import math
 
 
 def parity(permutation: tuple) -> int:
@@ -70,10 +71,12 @@ def parity(permutation: tuple) -> int:
 def is_square(apositiveint: int) -> bool:
     """Return True if *apositiveint* is a perfect square, False otherwise.
 
-    Uses Newton's method (integer square-root iteration) to avoid the
-    floating-point inaccuracies of ``math.sqrt``.  Needed when deciding
-    whether a coefficient ``num / sqrt(den)`` already appears in simplified
-    form in the LaTeX-conversion dictionary.
+    ``math.isqrt(n)`` is the exact integer square root ⌊√n⌋, computed with integer
+    arithmetic only: unlike ``math.sqrt``, which goes through a float and can round
+    the wrong way for large n, it is exact for integers of any size.  n is a perfect
+    square exactly when squaring ⌊√n⌋ gives n back.  Needed when deciding whether a
+    coefficient ``num / sqrt(den)`` already appears in simplified form in the
+    LaTeX-conversion dictionary.
 
     Parameters
     ----------
@@ -88,21 +91,11 @@ def is_square(apositiveint: int) -> bool:
     ------
     ValueError
         If the input is not an integer > 1.
-
-    References
-    ----------
-    Algorithm credit: https://stackoverflow.com/a/2489519
     """
+    # `type(...) is not int` (not isinstance) also rejects bool, a subclass of int.
     if type(apositiveint) is not int or apositiveint < 2:
         raise ValueError("Input must be an integer > 1.")
-    x = apositiveint // 2
-    seen = set([x])
-    while x * x != apositiveint:
-        x = (x + (apositiveint // x)) // 2
-        if x in seen:
-            return False
-        seen.add(x)
-    return True
+    return math.isqrt(apositiveint) ** 2 == apositiveint
 
 
 def all_equal(iterable) -> bool:

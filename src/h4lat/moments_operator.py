@@ -549,7 +549,24 @@ class Operator:
         ----------
         folder : str
             Target directory (created if absent).
+
+        Raises
+        ------
+        ValueError
+            If ``id``, ``irrep``, ``block`` or ``index_block`` is None, as for an
+            operator built with ``+`` or ``-``: the file name could not store it, and
+            ``Operator_from_file`` could not read it back.  Save such operators with
+            ``operator_list_to_h5``, which keeps None fields.
         """
+        # Checked before anything is created on disk, so that a refused save leaves no empty folder.
+        missing = [name for name in ("id", "irrep", "block", "index_block") if getattr(self, name) is None]
+        if missing:
+            verb = "is" if len(missing) == 1 else "are"
+            raise ValueError(
+                f"Operator.save stores id, irrep, block and index_block in the file name, but {', '.join(missing)} "
+                f"{verb} None for this operator (as for one built with + or -): save it with operator_list_to_h5, "
+                "which keeps None fields"
+            )
         Path(folder).mkdir(parents=True, exist_ok=True)
         filename = (
             f"{folder}/operator_{self.id}_{self.n}_{self.X}"
@@ -970,14 +987,15 @@ def index_symm_2exchange(cgmat: np.ndarray, i1: int, i2: int) -> str:
     return symm_new
 
 
-def index_symm_index_fixed(cgmat: np.ndarray, *kwargs: int) -> str:
+def index_symm_index_fixed(cgmat: np.ndarray, *fixed_indices: int) -> str:
     """Return the symmetry under permutations that keep the specified indices fixed.
 
     Parameters
     ----------
     cgmat : ndarray, shape (4,)*n
-    *kwargs : int
-        Index positions that must remain fixed in every permutation considered.
+    *fixed_indices : int
+        Index positions that must remain fixed in every permutation considered,
+        given as separate positional arguments, e.g. ``index_symm_index_fixed(c, 0, 2)``.
 
     Returns
     -------
@@ -987,7 +1005,6 @@ def index_symm_index_fixed(cgmat: np.ndarray, *kwargs: int) -> str:
         (vacuously) ``'Symmetric'``.
     """
     n = cgmat.ndim
-    fixed_indices = kwargs
     if n - len(set(fixed_indices)) < 2:
         return "Symmetric"
     symm_old = None
@@ -1168,12 +1185,12 @@ def make_operator_database(
         print(f"\nAll operators saved in {operator_folder}\n")
 
 
-def Operator_from_file(filename: str) -> Operator:
+def Operator_from_file(filename: str | Path) -> Operator:
     """Load an Operator from a .npy file, parsing metadata from the filename.
 
     Parameters
     ----------
-    filename : str
+    filename : str or Path
         Path to a file saved by ``Operator.save()``.  The filename format is
         ``operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy``.
 
@@ -1182,7 +1199,10 @@ def Operator_from_file(filename: str) -> Operator:
     Operator
     """
     cgmat = np.load(filename)
-    base = filename.split("/")[-1].replace(".npy", "")
+    # Path(...).stem is the file name without its folders and without the .npy suffix.
+    # Path splits at the separators of the operating system (also '\' on Windows), so
+    # that underscores in folder names never reach the split('_') below.
+    base = Path(filename).stem
     id_, n, X, irrep0, irrep1, block, index_block = base.split("_")[1:]
     return Operator(
         cgmat=cgmat,
@@ -2332,6 +2352,41 @@ def _compute_kinematic_factors(operators: list[Operator], n_jobs: int = 1, verbo
         progress.close()
 
 
+def _open_with_default_viewer(path: str) -> bool:
+    """Open *path* with the default application of the operating system, as a double click would.
+
+    Every system has its own way to do this: ``os.startfile`` on Windows (a function of the
+    os module that exists only there), the ``open`` command on macOS, and ``xdg-open`` on
+    Linux and the other Unix systems (part of the xdg-utils of desktop installations).
+
+    If no viewer can be started, e.g. on a cluster node without a desktop, where
+    ``xdg-open`` is missing or finds no application for the file, a warning is issued
+    instead of an error: the file has been written all the same.
+
+    Parameters
+    ----------
+    path : str
+        File to open.
+
+    Returns
+    -------
+    bool
+        True if the viewer was started, False if a warning was issued instead.
+    """
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)
+        else:
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            # check=True turns a non-zero exit status (e.g. no application for the file) into CalledProcessError.
+            subprocess.run([opener, path], check=True)
+    except (OSError, subprocess.CalledProcessError) as err:
+        # OSError: the command does not exist (FileNotFoundError), or os.startfile failed.
+        warnings.warn(f"Could not open {path} with the default viewer: {err}", stacklevel=2)
+        return False
+    return True
+
+
 def operator_show(
     operator_database: str | None = None,
     title: str | None = None,
@@ -2387,10 +2442,14 @@ def operator_show(
         Print the selection, progress bars over the operators and progress
         messages to stdout (default ``True``).
     show : bool, optional
-        Open the PDF with ``xdg-open`` after generation (default ``True``).
+        Open the PDF with the default viewer of the operating system after
+        generation (default ``True``): ``xdg-open`` on Linux, ``open`` on macOS,
+        ``os.startfile`` on Windows.  If no viewer can be started (e.g. on a
+        machine without a desktop), a warning is issued and the PDF is kept.
     remove_pdf : bool, optional
         Delete the PDF file after showing it — useful when the user only
-        needs a one-off preview (default ``False``).
+        needs a one-off preview (default ``False``).  A PDF that could not be
+        shown is kept.
     clean_tex : bool, optional
         Remove the intermediate ``.tex`` and auxiliary LaTeX files after PDF
         generation (default ``True``).
@@ -2585,17 +2644,20 @@ def operator_show(
 
     # --- Optional on-screen display ---
 
+    shown = False
     if show:
-        # Open the PDF with the system's default viewer
-        subprocess.call(["xdg-open", file_name])
-        # Brief pause so the viewer has time to render before a potential deletion
-        time.sleep(1.5)
-        if verbose:
-            print("Operator catalogue shown")
+        # Open the PDF with the default viewer of the operating system (a warning if that fails)
+        shown = _open_with_default_viewer(file_name)
+        if shown:
+            # Brief pause so the viewer has time to render before a potential deletion
+            time.sleep(1.5)
+            if verbose:
+                print("Operator catalogue shown")
 
     # --- Optional cleanup ---
 
-    if remove_pdf:
+    # A PDF that was to be shown but could not be is kept: deleting it would lose the whole catalogue.
+    if remove_pdf and (shown or not show):
         # Delete the PDF from disk
         Path(file_name).unlink()
         if verbose:

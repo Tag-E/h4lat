@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import numpy as np
 import pytest
@@ -20,6 +20,7 @@ from h4lat import (
     OPERATOR_DATABASE,
     Gamma_pol_list,
     Operator_from_database,
+    Operator_from_file,
     OperatorDict_from_database,
     OperatorList_from_database,
     cg_calc,
@@ -47,7 +48,14 @@ from h4lat import (
 )
 from h4lat.cli import catalogue_main
 from h4lat.kinematic_data import E, I, mN, p1, p2, p3
-from h4lat.moments_operator import _catalogue_selection, _compute_kinematic_factors, _exact_number, trace_symm
+from h4lat.moments_operator import (
+    _catalogue_selection,
+    _compute_kinematic_factors,
+    _exact_number,
+    _open_with_default_viewer,
+    trace_symm,
+)
+from h4lat.utilities import is_square
 
 # ---------------------------------------------------------------------------
 # Group constants
@@ -87,6 +95,25 @@ def test_char_table_shape():
 def test_class_orders_sum():
     # Sum of class orders = group order = 384
     assert sum(class_orders) == 384
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+
+def test_is_square():
+    """is_square agrees with the list of squares, is exact for huge integers and rejects invalid input."""
+    squares = {k * k for k in range(2, 101)}
+    assert [n for n in range(2, 10_001) if is_square(n)] == sorted(squares)
+    # Far beyond the 53-bit precision of a float, where √ via math.sqrt could round the wrong way.
+    big = 10**20 + 7
+    assert is_square(big**2)
+    assert not is_square(big**2 + 1) and not is_square(big**2 - 1)
+    # Only integers > 1; bool is a subclass of int but is rejected too.
+    for bad in (1, 0, -4, 4.0, True):
+        with pytest.raises(ValueError, match="integer > 1"):
+            is_square(bad)
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +472,63 @@ def test_operator_show_compiles_a_small_catalogue(monkeypatch, tmp_path):
     assert (tmp_path / path).is_file()
     # clean_tex=True (default): the LaTeX source is removed
     assert not (tmp_path / "operator_catalogue_V_nder1.tex").exists()
+
+
+@pytest.mark.parametrize("platform, command", [("linux", "xdg-open"), ("darwin", "open"), ("freebsd14", "xdg-open")])
+def test_open_with_default_viewer_uses_the_command_of_the_system(monkeypatch, platform, command):
+    calls = []
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    assert _open_with_default_viewer("ops.pdf") is True
+    assert calls == [([command, "ops.pdf"], {"check": True})]
+
+
+def test_open_with_default_viewer_on_windows(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    # os.startfile exists only on Windows: raising=False lets monkeypatch create it on the other systems.
+    monkeypatch.setattr(os, "startfile", calls.append, raising=False)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("no command is run on Windows"))
+    assert _open_with_default_viewer("ops.pdf") is True
+    assert calls == ["ops.pdf"]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError(2, "No such file or directory", "xdg-open"),  # no xdg-open, e.g. on a cluster node
+        subprocess.CalledProcessError(3, ["xdg-open", "ops.pdf"]),  # xdg-open found no application
+    ],
+)
+def test_open_with_default_viewer_warns_if_no_viewer_starts(monkeypatch, error):
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(subprocess, "run", fail)
+    with pytest.warns(UserWarning, match="Could not open ops.pdf with the default viewer"):
+        assert _open_with_default_viewer("ops.pdf") is False
+
+
+@pytest.mark.parametrize("opened", [True, False])
+def test_operator_show_opens_the_pdf_and_keeps_it_if_it_cannot(monkeypatch, tmp_path, opened):
+    """show=True passes the PDF to the viewer; remove_pdf deletes it only once it has been shown."""
+    pylatex = pytest.importorskip("pylatex")
+    import h4lat.moments_operator
+
+    # Instead of compiling with LaTeX, write a stand-in PDF where generate_pdf would write the real one.
+    monkeypatch.setattr(
+        pylatex.Document, "generate_pdf", lambda self, filepath, **kwargs: Path(f"{filepath}.pdf").write_text("%PDF")
+    )
+    viewed = []
+    monkeypatch.setattr(
+        h4lat.moments_operator, "_open_with_default_viewer", lambda path: viewed.append(path) or opened
+    )
+    monkeypatch.setattr(h4lat.moments_operator.time, "sleep", lambda seconds: None)
+    monkeypatch.chdir(tmp_path)
+    path = operator_show(keys="S0", verbose=False, show=True, remove_pdf=True)
+    assert viewed == [str(path)]
+    assert (tmp_path / path).exists() is not opened
 
 
 def test_parallel_kinematic_factors_match_the_serial_ones():
@@ -927,6 +1011,60 @@ def test_operator_without_indices_arithmetic_and_hdf5(tmp_path):
     for op, op_r in zip(ops, reloaded):
         assert (op_r.id, op_r.X, op_r.irrep, op_r.n) == (op.id, op.X, op.irrep, op.n)
         assert op_r.cgmat.shape == op.cgmat.shape and np.array_equal(op_r.cgmat, op.cgmat)
+
+
+def _metadata(op):
+    """The fields of an operator that Operator.save stores in the file name."""
+    return (op.id, op.n, op.X, op.irrep, op.block, op.index_block)
+
+
+def test_operator_file_round_trip(tmp_path):
+    """Operator.save / Operator_from_file round trip, from a str and from a Path, in a folder whose name has '_'."""
+    op = Operator_from_database(29)
+    folder = tmp_path / "my_ops"
+    op.save(str(folder))
+    (path,) = folder.iterdir()
+    for filename in (str(path), path):
+        loaded = Operator_from_file(filename)
+        assert _metadata(loaded) == _metadata(op)
+        assert np.array_equal(loaded.cgmat, op.cgmat)
+
+
+def test_saving_an_operator_without_metadata_points_to_hdf5(tmp_path):
+    """Operators built with + or - lack metadata that the file name stores: save refuses them before writing."""
+    a = Operator_from_database(29)
+    b = Operator_from_database(30)  # the next column of the same (6,1) block
+    c = Operator_from_database(25)  # (1,1)
+    folder = tmp_path / "ops"
+    # Same irrep and block: irrep and block are kept, but id and index_block are None.  Different irreps: all four.
+    for combined, missing in (
+        (a + b, "id, index_block"),
+        (a - b, "id, index_block"),
+        (a + c, "id, irrep, block, index_block"),
+    ):
+        with pytest.raises(ValueError, match=f"but {missing} are None.*operator_list_to_h5"):
+            combined.save(str(folder))
+    assert not folder.exists()
+    # Scaling keeps all the metadata, so a scaled operator is still saved and read back.
+    (2 * a).save(str(folder))
+    (path,) = folder.iterdir()
+    loaded = Operator_from_file(path)
+    assert _metadata(loaded) == _metadata(a) and np.allclose(loaded.cgmat, 2 * a.cgmat)
+
+
+def test_operator_from_file_parses_windows_paths(monkeypatch):
+    """A Windows path with '_' in a folder name, once split at '/' only ("too many values to unpack").
+
+    On Windows, Path is WindowsPath, which also splits at '\\': PureWindowsPath stands in for it here, and
+    np.load is replaced so that no file is read.
+    """
+    import h4lat.moments_operator
+
+    op = Operator_from_database(29)
+    monkeypatch.setattr(h4lat.moments_operator, "Path", PureWindowsPath)
+    monkeypatch.setattr(np, "load", lambda filename: op.cgmat)
+    loaded = Operator_from_file(r"C:\Users\me\my_ops\operator_29_2_V_6_1_1_1.npy")
+    assert _metadata(loaded) == _metadata(op) == (29, 2, "V", (6, 1), 1, 1)
 
 
 def test_decomposition_analysis_with_zero_and_one_derivative():

@@ -505,7 +505,7 @@ class cg_calc:
 
     def __init__(
         self,
-        *kwarg: tuple[int, int],
+        *irreps: tuple[int, int],
         cgdatabase: str | None = None,
         force_computation: bool = False,
         force_h4gen: bool = False,
@@ -519,7 +519,7 @@ class cg_calc:
 
         Parameters
         ----------
-        *kwarg : tuple[int,int]
+        *irreps : tuple[int,int]
             Irreps of H(4), e.g. (4,1), (4,4), (6,1), …  A single irrep is allowed: its
             "product" is the irrep itself, whose CG matrix is the identity (the operators
             without derivatives).
@@ -553,8 +553,9 @@ class cg_calc:
             Print progress messages.
         """
 
-        self.chosen_irreps = kwarg
+        self.chosen_irreps = irreps
         self._raw_cg = None  # see the raw_cg property
+        self._h4_mat = None  # see the h4_mat property
 
         # --- data paths -----------------------------------------------------------
         # The bundled package data are only read, never written: regenerated H(4)
@@ -563,6 +564,9 @@ class cg_calc:
             self.h4_ele_folder = _LOCAL_H4_ELE
         else:
             self.h4_ele_folder = _BUNDLED_H4_ELE
+        # The same folder as an absolute path, fixed now: the local folder is relative to the
+        # working directory, which may change before the h4_mat property reads the matrices.
+        self._h4_ele_path = str(Path(self.h4_ele_folder).resolve())
 
         # CG database: a user-supplied path is used for both reading and writing.
         # Otherwise new results are written to the local database, and a product is
@@ -646,21 +650,16 @@ class cg_calc:
                     with open(f'{rep_folder}/{i}.npy', 'wb') as f:
                         np.save(f, ele)
 
-        # Here the folder exists and force_h4gen is False: load the stored matrices of all
-        # the H(4) elements (the bundled ones, or those saved earlier in the local folder).
-        else:
+            # The files of this folder have changed, so any copy of them that _load_h4_matrices
+            # has cached is stale (functools.cache can only forget all its entries at once).
+            _load_h4_matrices.cache_clear()
 
-            if verbose:
-                print("\nLoading matrix representations for all the elements of H(4) ...\n")
+        # Otherwise the folder exists and force_h4gen is False: the stored matrices (the bundled
+        # ones, or those saved earlier in the local folder) are not read here.  They are needed
+        # only to compute new CG coefficients, and the h4_mat property reads them on first
+        # access, once per session and folder (see _load_h4_matrices).
 
-            self.h4_mat = [[] for _ in range(self.n_rep)]
-            for ir in range(self.n_rep):
-                rep_folder = self.h4_ele_folder + f"/{str(self.rep_label_list[ir])}"
-                for i in range(self.n_ele_h4):
-                    with open(f'{rep_folder}/{i}.npy', 'rb') as f:
-                        self.h4_mat[ir].append(np.load(f, allow_pickle=True))
-
-        self.mul_list = get_multiplicities(*kwarg)
+        self.mul_list = get_multiplicities(*irreps)
 
         if not Path(self.cg_folder).exists() or force_computation:
 
@@ -831,6 +830,27 @@ class cg_calc:
     def raw_cg(self, value: dict[tuple[int, int], np.ndarray]) -> None:
         self._raw_cg = value
 
+    @property
+    def h4_mat(self) -> list[list[np.ndarray]]:
+        """
+        Matrices of all the elements of H(4) in every irrep: h4_mat[ir][i] is the matrix of the
+        i-th element in the irrep rep_label_list[ir].
+
+        They are needed only to compute new CG coefficients.  Generated matrices (force_h4gen,
+        or no h4_ele folder) are set in __init__; stored ones are read on first access, through
+        _load_h4_matrices, which reads the files of a folder only once per session.  The
+        arrays are then shared with every other cg_calc of the same folder, and read-only.
+        """
+        if self._h4_mat is None:
+            # A list of lists of this instance (the type that the generation in __init__ builds),
+            # holding the shared, cached arrays.
+            self._h4_mat = [list(rep) for rep in _load_h4_matrices(self._h4_ele_path)]
+        return self._h4_mat
+
+    @h4_mat.setter
+    def h4_mat(self, value: list[list[np.ndarray]]) -> None:
+        self._h4_mat = value
+
     def get_multiplicities(self) -> list[int]:
         """Return the multiplicity list for the tensor product under study."""
         return self.mul_list
@@ -878,13 +898,13 @@ class cg_calc:
 ######################## Auxiliary Functions ###############################
 
 
-def get_multiplicities(*kwarg: tuple[int, int]) -> list[int]:
+def get_multiplicities(*irreps: tuple[int, int]) -> list[int]:
     """
     Compute the multiplicity of each H(4) irrep in the given tensor product.
 
     Parameters
     ----------
-    *kwarg : tuple[int,int]
+    *irreps : tuple[int,int]
         Irreps of H(4), e.g. (4,1), (4,4), …
 
     Returns
@@ -897,7 +917,7 @@ def get_multiplicities(*kwarg: tuple[int, int]) -> list[int]:
         mul = 0
         for ic, class_ord in enumerate(class_orders):
             tmp = class_ord * char_table[ir, ic]
-            for k in kwarg:
+            for k in irreps:
                 tmp *= char_table[irrep_index[k], ic]
             mul += tmp
         mul /= n_ele_h4
@@ -906,26 +926,26 @@ def get_multiplicities(*kwarg: tuple[int, int]) -> list[int]:
 
 
 def latex_print_multiplicities(
-    *kwarg: tuple[int, int], display_eq: bool = False, return_str: bool = True
+    *irreps: tuple[int, int], display_eq: bool = False, return_str: bool = True
 ) -> str | None:
     """
     Return (and optionally display) the LaTeX string for the irrep decomposition.
 
     Parameters
     ----------
-    *kwarg : tuple[int,int]
+    *irreps : tuple[int,int]
         Irreps forming the tensor product.
     display_eq : bool
         If True and inside a Jupyter notebook, render the equation inline.
     return_str : bool
         If True, return the LaTeX string.
     """
-    mult_list = get_multiplicities(*kwarg)
+    mult_list = get_multiplicities(*irreps)
     out_str = r"$"
 
-    for i, (a, b) in enumerate(kwarg):
+    for i, (a, b) in enumerate(irreps):
         out_str += f"\\tau^{{\\left({a}\\right)}}_{{{b}}}"
-        if i != len(kwarg) - 1:
+        if i != len(irreps) - 1:
             out_str += " \\otimes "
 
     out_str += " = "
@@ -942,6 +962,45 @@ def latex_print_multiplicities(
         display(MathDisplay(out_str))
 
     return out_str if return_str else None
+
+
+@functools.cache
+def _load_h4_matrices(folder: str) -> tuple[tuple[np.ndarray, ...], ...]:
+    """
+    Read the matrices of all the elements of H(4), in every irrep, from *folder*.
+
+    The folder holds one sub-folder per irrep, named after its label (e.g. '(4, 1)'), with
+    the files '0.npy' … '383.npy' written by cg_calc: 20 × 384 = 7680 small files.
+    functools.cache stores the result of each call, keyed by *folder*: a later call with the
+    same folder returns the same objects without reading the files again.  cg_calc therefore
+    passes an absolute path (the same relative folder seen from two working directories is
+    two different folders), and calls _load_h4_matrices.cache_clear() after writing new
+    matrices into a folder.
+
+    The arrays are shared by every cg_calc that uses the folder: they are made read-only, so
+    that changing one in place raises an error instead of silently changing it for all the
+    others.  The containers are tuples for the same reason.
+
+    Parameters
+    ----------
+    folder : str
+        Absolute path of an h4_ele folder.
+
+    Returns
+    -------
+    tuple of tuple of ndarray
+        Entry [ir][i] is the matrix of the i-th element in the irrep rep_label_list[ir].
+    """
+    matrices = []
+    for label in rep_label_list:
+        rep_matrices = []
+        for i in range(n_ele_h4):
+            with open(f'{folder}/{label}/{i}.npy', 'rb') as f:
+                ele = np.load(f, allow_pickle=True)
+            ele.setflags(write=False)  # read-only: see above
+            rep_matrices.append(ele)
+        matrices.append(tuple(rep_matrices))
+    return tuple(matrices)
 
 
 def _element_matrices(h4_mat: list[list[np.ndarray]], irep: int) -> np.ndarray:

@@ -6,6 +6,7 @@ blocks are checked to span H(4)-invariant subspaces that transform as their irre
 all together, the whole tensor-product space.
 """
 
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -561,6 +562,54 @@ def test_raw_blocks_are_loaded_on_access():
     cg = cg_calc((4, 1), (4, 1), verbose=False)
     assert cg._raw_cg is None
     assert sorted(cg.raw_cg) == sorted((irep, m) for irep, blocks in cg.cg_dict.items() for m in range(len(blocks)))
+
+
+def test_h4_matrices_are_read_on_access_and_shared():
+    """Loading a product reads no H(4) matrix; they are read on first access, only once, and shared read-only."""
+    cc._load_h4_matrices.cache_clear()
+    a = cg_calc((4, 1), (4, 1), verbose=False)
+    b = cg_calc((6, 1), (4, 1), verbose=False)
+    assert a._h4_mat is None and b._h4_mat is None
+    assert cc._load_h4_matrices.cache_info().currsize == 0
+    # b reads the folder, a finds it in the cache: both hold the same array objects.
+    assert b.h4_mat[10][5] is a.h4_mat[10][5]
+    info = cc._load_h4_matrices.cache_info()
+    assert (info.misses, info.hits) == (1, 1)
+    # The shared arrays are read-only, so an in-place change cannot alter them for every instance.
+    with pytest.raises(ValueError, match="read-only"):
+        a.h4_mat[10][5][0, 0] = 2.0
+
+
+def test_h4_matrix_cache_is_keyed_by_the_absolute_folder(tmp_path, monkeypatch):
+    """The ./h4_ele of two working directories are two folders: each cg_calc reads the one of its own."""
+    bundled = cc._BUNDLED_H4_ELE
+    monkeypatch.setattr(cc, "_BUNDLED_H4_ELE", str(tmp_path / "no_bundled_h4_ele"))  # so that ./h4_ele is used
+    for name in ("a", "b"):
+        shutil.copytree(bundled, tmp_path / name / "h4_ele")
+    # In b, the identity (element 0) of the irrep (4,1) becomes 2·𝟙.
+    np.save(tmp_path / "b" / "h4_ele" / "(4, 1)" / "0.npy", 2 * np.eye(4))
+
+    monkeypatch.chdir(tmp_path / "a")
+    cg_a = cg_calc((4, 1), (4, 1), verbose=False)  # the CGs themselves are loaded from the bundled database
+    monkeypatch.chdir(tmp_path / "b")
+    cg_b = cg_calc((4, 1), (4, 1), verbose=False)
+    assert cg_a.h4_ele_folder == cg_b.h4_ele_folder == "h4_ele"
+
+    # Both are read in b, after the last chdir: each still reads the folder it was created in.
+    ir = irrep_index[(4, 1)]
+    assert np.array_equal(cg_b.h4_mat[ir][0], 2 * np.eye(4))
+    assert np.array_equal(cg_a.h4_mat[ir][0], np.eye(4))
+
+
+def test_generated_h4_matrices_clear_the_cache(tmp_path, monkeypatch):
+    """Writing new matrices (force_h4gen) empties the cache, whose copy of that folder would be stale."""
+    monkeypatch.chdir(tmp_path)  # force_h4gen writes ./h4_ele
+    cc._load_h4_matrices.cache_clear()
+    _ = cg_calc((4, 1), (4, 1), verbose=False).h4_mat  # caches the bundled matrices
+    assert cc._load_h4_matrices.cache_info().currsize == 1
+    generated = cg_calc((4, 1), (4, 1), force_h4gen=True, verbose=False)
+    assert cc._load_h4_matrices.cache_info().currsize == 0
+    assert generated._h4_mat is not None  # the generated matrices are kept, not read back from the files
 
 
 def test_products_of_four_irreps_are_bundled_without_raw_blocks(tmp_path, monkeypatch):

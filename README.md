@@ -465,6 +465,7 @@ embed a single operator inside a larger, custom HDF5 layout of your own.
 | `h4lat.moments_operator` | `Operator`, database I/O, kinematic factor utilities |
 | `h4lat.kinematic_data` | Dirac gamma matrices, symbolic momenta, polarisation matrix |
 | `h4lat.utilities` | Permutation parity, perfect-square test, all-equal check |
+| `h4lat.cli` | `catalogue_main`, the entry point of the `h4lat-catalogue` command (PDF catalogue of the operators) |
 
 ---
 

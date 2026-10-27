@@ -7,6 +7,22 @@ Changes marked **Breaking** can change the results or the code of existing users
 
 ## [Unreleased]
 
+### Changed
+
+- `cg_calc` reads the H(4) matrices (`cg_calc.h4_mat`) only when it computes new CG coefficients, and then once
+  per session and folder: loading a product from a database no longer reads 7680 files (0.15 s → under 1 ms).
+  The arrays in `h4_mat` are shared between instances and read-only.
+
+### Fixed
+
+- `Operator_from_file` reads Windows paths whose folder names contain `_`, and also accepts a `Path`.
+- `Operator.save` refuses operators without `id`, `irrep`, `block` or `index_block` (those built with `+` or `-`)
+  with a `ValueError` pointing to `operator_list_to_h5`. It used to raise a `TypeError`, or to write a file that
+  `Operator_from_file` could not read.
+- `operator_show(show=True)` (the default) and `h4lat-catalogue --open` open the PDF on macOS and Windows too, not
+  only with `xdg-open`. If no viewer can be started, a warning replaces the error, and the PDF is kept, even with
+  `remove_pdf=True`.
+
 ## [0.2.0] - 2026-10-23
 
 First public release.
