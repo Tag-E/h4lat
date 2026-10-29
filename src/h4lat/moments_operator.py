@@ -1630,6 +1630,8 @@ AVAILABLE_PAPERS = {
     "Taggi:2026skn": "10.1103/kknt-zxsw",
     "Alexandrou:2026tjs": "10.48550/arXiv.2607.03458",
     "Gockeler:2004wp": "10.1103/PhysRevD.71.114511",
+    "LHPC:2002xzk": "10.1103/PhysRevD.66.034506",
+    "Gockeler:1995wg": "10.1103/PhysRevD.53.2317",
 }
 
 
@@ -1664,6 +1666,15 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
       Vector: 2 derivatives, irrep (4,2); 3 derivatives, irreps (1,2) and (6,2).
     * ``"Gockeler:2004wp"`` — M. Göckeler et al., Phys. Rev. D 71, 114511 (2005), arXiv:hep-ph/0410187.
       Vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1).
+    * ``"LHPC:2002xzk"`` — D. Dolgov et al. (LHPC and SESAM), Phys. Rev. D 66, 034506 (2002),
+      arXiv:hep-lat/0201021.
+      Vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1).
+      Axial: no derivative, irrep (4,4); 1 derivative, irreps (6,4) and (6,1); 2 derivatives, irreps (4,3) and (8,1).
+      Tensor: no derivative, irrep (6,1); 1 derivative, irrep (8,1).
+    * ``"Gockeler:1995wg"`` — M. Göckeler et al., Phys. Rev. D 53, 2317 (1996), arXiv:hep-lat/9508004.
+      Vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1).
+      Axial: no derivative, irrep (4,4); 2 derivatives, irreps (4,3) and (8,1).  The axial operators use the
+      polarisation projector ``gamma_pol_index=1``, which polarises the nucleon in the 2-direction as in the paper.
 
     Parameters
     ----------
@@ -1720,7 +1731,8 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
     # The comments give the index structure of each operator, up to its normalisation.  The first
     # index is that of γ_μ for V and A, the first two are those of σ_{μν} for T, and the others are
-    # those of the derivatives; {...} is the symmetric combination of the indices in it.
+    # those of the derivatives; {...} is the symmetric combination of the indices in it and [...] the antisymmetric
+    # one (in [1,{3],4} the indices 3,4 are symmetrised first, then 1 and 3 are antisymmetrised).
     # The definitions are aligned in columns, and examples/paper_operators.ipynb shows them as they
     # are written here (test_paper_operators_notebook_code checks it): "fmt: off" stops black from
     # reformatting them, up to "fmt: on".
@@ -1919,6 +1931,115 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
         opv4.id = "v_4"
 
         return [opv2a, opv2b, opv3, opv4]
+
+    if paper == "LHPC:2002xzk":
+        # Operators of Table II of the paper, for the moments of the quark density (V), helicity (A) and transversity
+        # (T) distributions and for the twist-3 d_1, d_2 (the paper uses the momentum P = 0 or P = (p_1, 0, 0), and
+        # polarises the nucleon in the 3-direction, as the default projector gamma_pol_index=0 does).
+        # The paper writes the axial operators with γ₅γ_μ = -γ_μγ₅ and the tensor ones with γ₅σ_μν: with
+        # γ₅ = γ₁γ₂γ₃γ₄, γ₅σ_34 = -σ_12 and γ₅σ_31 = -σ_24.
+        # The paper gives the opposite C-parities for T1, T2, d1 and d2: here C = η_X (-1)^(number of derivatives)
+        # for all these operators (see C_parity), so that d1 has the same C as A2, which has the same Dirac
+        # structure and number of derivatives.
+
+        # V2: <x>_q (1 derivative)
+        # Vector - irrep (6,3), C=+1
+        opV2_a = Operator_from_database(38)         # = {1,4}
+        # Vector - irrep (3,1), C=+1
+        opV2_b = -1/3 * Operator_from_database(26)  # = 4,4 - 1/3 * (1,1 + 2,2 + 3,3)
+
+        # V3: <x^2>_q (2 derivatives): Vector - irrep (8,1), C=-1
+        # (the same combination of components 4 and 8 of blocks 1 and 2: each part has mixed symmetry,
+        #  their sum is completely symmetric, so the operator belongs to no single block)
+        opV3 = -1/4 * (Operator_from_database(140) + 3 * Operator_from_database(144) + Operator_from_database(148) + 3 * Operator_from_database(152))  # = {1,1,4} - 1/2 * ({2,2,4} + {3,3,4})
+
+        # V4: <x^3>_q (3 derivatives): Vector - irrep (2,1), C=+1
+        # (likewise, the sum of component 2 of blocks 1 and 2)
+        opV4 = -Operator_from_database(472) - Operator_from_database(474)  # = {1,1,4,4} + {2,2,3,3} - {1,1,3,3} - {2,2,4,4}
+
+        # A1: <1>_Δq (no derivative): Axial - irrep (4,4), C=+1
+        opA1 = Operator_from_database(9)  # = 3
+
+        # A2: <x>_Δq (1 derivative): Axial - irrep (6,4), C=-1
+        # (the paper gives 6_3^-, the irrep of the vector operators with the same indices)
+        opA2_a = Operator_from_database(52)  # = {1,3}
+        opA2_b = Operator_from_database(56)  # = {3,4}
+
+        # A3: <x^2>_Δq (2 derivatives): Axial - irrep (4,3), C=+1
+        # (the paper gives 4_2^+, likewise the irrep of the vector operators with the same indices)
+        opA3 = Operator_from_database(182)  # = {1,3,4}
+
+        # T1: <1>_δq (no derivative): Tensor - irrep (6,1), C=-1 (the paper gives C=+1)
+        opT1 = Operator_from_database(11)  # = 1,2 (= -γ₅ x 3,4)
+
+        # T2: <x>_δq (1 derivative): Tensor - irrep (8,1), C=+1 (the paper gives C=-1)
+        opT2 = Operator_from_database(66) - 1/2 * Operator_from_database(70)  # = -1,2,1 - 2,4,4 (= γ₅ x 3,{4,1})
+
+        # d1 (1 derivative, twist 3): Axial - irrep (6,1), C=-1 (the paper gives C=+1)
+        opd1 = Operator_from_database(45)  # = [3,4] = 3,4 - 4,3
+
+        # d2 (2 derivatives, twist 3): Axial - irrep (8,1), C=+1 (the paper gives C=-1)
+        opd2 = 1/2 * Operator_from_database(202) - Operator_from_database(206)  # = [1,{3],4} = 1,3,4 + 1,4,3 - 3,1,4 - 3,4,1
+
+        # Set custom labels
+        opV2_a.id = "V2_a"
+        opV2_b.id = "V2_b"
+        opV3.id = "V3"
+        opV4.id = "V4"
+        opA1.id = "A1"
+        opA2_a.id = "A2_a"
+        opA2_b.id = "A2_b"
+        opA3.id = "A3"
+        opT1.id = "T1"
+        opT2.id = "T2"
+        opd1.id = "d1"
+        opd2.id = "d2"
+
+        return [opV2_a, opV2_b, opV3, opV4, opA1, opA2_a, opA2_b, opA3, opT1, opT2, opd1, opd2]
+
+    if paper == "Gockeler:1995wg":
+        # Operators of Table II of the paper, for the moments v_n of the unpolarised and a_n, d_n of the polarised
+        # structure functions (the paper uses the momentum p = 0 for v_2b and a_0, and p = (p_1, 0, 0) for the others)
+
+        # Second moment, v_2 (1 derivative)
+        # Vector - irrep (6,3), C=+1
+        opv2a = Operator_from_database(38)         # = {1,4}
+        # Vector - irrep (3,1), C=+1
+        opv2b = -1/3 * Operator_from_database(26)  # = 4,4 - 1/3 * (1,1 + 2,2 + 3,3)
+
+        # Third moment, v_3 (2 derivatives): Vector - irrep (8,1), C=-1
+        # (the same combination of components 4 and 8 of blocks 1 and 2: each part has mixed symmetry,
+        #  their sum is completely symmetric, so the operator belongs to no single block)
+        opv3 = -1/4 * (Operator_from_database(140) + 3 * Operator_from_database(144) + Operator_from_database(148) + 3 * Operator_from_database(152))  # = {1,1,4} - 1/2 * ({2,2,4} + {3,3,4})
+
+        # Fourth moment, v_4 (3 derivatives): Vector - irrep (2,1), C=+1
+        # (likewise, the sum of component 2 of blocks 1 and 2)
+        opv4 = -Operator_from_database(472) - Operator_from_database(474)  # = {1,1,4,4} + {2,2,3,3} - {1,1,3,3} - {2,2,4,4}
+
+        # a_0 (no derivative): Axial - irrep (4,4), C=+1
+        opa0 = Operator_from_database(8)     # = 2
+        # a_2 (2 derivatives): Axial - irrep (4,3), C=+1
+        opa2 = Operator_from_database(183)   # = {2,1,4}
+        # d_2 (2 derivatives, twist 3): Axial - irrep (8,1), C=+1
+        opd2 = -Operator_from_database(203)  # = [2,{1],4} = 2,1,4 + 2,4,1 - 1,2,4 - 1,4,2
+
+        # The paper polarises the nucleon in the 2-direction, Γ = ½(1 + γ₄) iγ₅γ₂, as does the projector
+        # gamma_pol_index=1, Γ_pol = ½(1 + γ₄)(1 − iγ₁γ₃): with the default one (polarised in the 3-direction)
+        # the kinematic factor K of a_0, a_2 and d_2 vanishes at the momenta of the paper
+        opa0.set_polarization_matrix(1)
+        opa2.set_polarization_matrix(1)
+        opd2.set_polarization_matrix(1)
+
+        # Set custom labels
+        opv2a.id = "v_2a"
+        opv2b.id = "v_2b"
+        opv3.id = "v_3"
+        opv4.id = "v_4"
+        opa0.id = "a_0"
+        opa2.id = "a_2"
+        opd2.id = "d_2"
+
+        return [opv2a, opv2b, opv3, opv4, opa0, opa2, opd2]
     # fmt: on
 
 

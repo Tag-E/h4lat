@@ -47,7 +47,7 @@ from h4lat import (
     rep_label_list,
 )
 from h4lat.cli import catalogue_main
-from h4lat.kinematic_data import E, I, mN, p1, p2, p3
+from h4lat.kinematic_data import E, I, gamma5, gamma_mu, mN, p1, p2, p3
 from h4lat.moments_operator import (
     _catalogue_selection,
     _compute_kinematic_factors,
@@ -651,6 +651,26 @@ def test_op_selection_three_derivatives():
 # ---------------------------------------------------------------------------
 
 
+def _braces(*indices):
+    """{i,j,...}: every distinct ordering of the (1-based) indices, with coefficient 1."""
+    tensor = np.zeros((4,) * len(indices))
+    for ordering in set(it.permutations(i - 1 for i in indices)):
+        tensor[ordering] += 1
+    return tensor
+
+
+def _component(*indices):
+    """The single component i,j,... (1-based indices) with coefficient 1, e.g. γ_3 for _component(3)."""
+    tensor = np.zeros((4,) * len(indices))
+    tensor[tuple(i - 1 for i in indices)] = 1
+    return tensor
+
+
+def _antisymmetrised(s, m, k):
+    """[s,{m],k} = s,{m,k} - m,{s,k}: m and k symmetrised first, then s and m antisymmetrised (1-based indices)."""
+    return _component(s, m, k) + _component(s, k, m) - _component(m, s, k) - _component(m, k, s)
+
+
 def test_paper_operators_labels():
     """Every paper returns its operators with their labels as id."""
     expected = {
@@ -662,6 +682,8 @@ def test_paper_operators_labels():
         "Alexandrou:2026tjs": ["{2,3,4}", "{1,3,4}", "{1,2,4}", "{1,2,3}", "{1,2,3,4}"]
         + ["{4,4,2,3} - {1,1,2,3}", "{4,4,1,3} - {2,2,1,3}", "{4,4,1,2} - {3,3,1,2}"],
         "Gockeler:2004wp": ["v_2a", "v_2b", "v_3", "v_4"],
+        "LHPC:2002xzk": ["V2_a", "V2_b", "V3", "V4", "A1", "A2_a", "A2_b", "A3", "T1", "T2", "d1", "d2"],
+        "Gockeler:1995wg": ["v_2a", "v_2b", "v_3", "v_4", "a_0", "a_2", "d_2"],
     }
     assert list(expected) == list(AVAILABLE_PAPERS)
     for paper, ids in expected.items():
@@ -684,6 +706,12 @@ def test_paper_operators_irreps():
         + [("T", 4, (6, 2))] * 6,
         "Alexandrou:2026tjs": [("V", 3, (4, 2))] * 4 + [("V", 4, (1, 2))] + [("V", 4, (6, 2))] * 3,
         "Gockeler:2004wp": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))],
+        "LHPC:2002xzk": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))]
+        + [("A", 1, (4, 4)), ("A", 2, (6, 4)), ("A", 2, (6, 4)), ("A", 3, (4, 3))]
+        + [("T", 2, (6, 1)), ("T", 3, (8, 1))]
+        + [("A", 2, (6, 1)), ("A", 3, (8, 1))],
+        "Gockeler:1995wg": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))]
+        + [("A", 1, (4, 4)), ("A", 3, (4, 3)), ("A", 3, (8, 1))],
     }
     for paper, structure in expected.items():
         ops = get_paper_operators(paper)
@@ -733,22 +761,14 @@ def test_paper_operators_explicit():
 
 def test_paper_operators_gockeler():
     """The operators of Göckeler et al. are those of Eq. (31) of the paper, with the C-parities of its Table 2."""
-
-    def braces(*indices):
-        """{i,j,...}: every distinct ordering of the (1-based) indices, with coefficient 1."""
-        tensor = np.zeros((4,) * len(indices))
-        for ordering in set(it.permutations(i - 1 for i in indices)):
-            tensor[ordering] += 1
-        return tensor
-
     # Eq. (31), written out index by index
     expected = [
-        braces(1, 4),
-        braces(4, 4) - 1 / 3 * (braces(1, 1) + braces(2, 2) + braces(3, 3)),
-        braces(4, 4, 1) - 1 / 2 * (braces(2, 2, 1) + braces(3, 3, 1)),
-        braces(1, 1, 4, 4)
-        + braces(2, 2, 3, 3)
-        - 1 / 2 * (braces(1, 1, 3, 3) + braces(1, 1, 2, 2) + braces(2, 2, 4, 4) + braces(3, 3, 4, 4)),
+        _braces(1, 4),
+        _braces(4, 4) - 1 / 3 * (_braces(1, 1) + _braces(2, 2) + _braces(3, 3)),
+        _braces(4, 4, 1) - 1 / 2 * (_braces(2, 2, 1) + _braces(3, 3, 1)),
+        _braces(1, 1, 4, 4)
+        + _braces(2, 2, 3, 3)
+        - 1 / 2 * (_braces(1, 1, 3, 3) + _braces(1, 1, 2, 2) + _braces(2, 2, 4, 4) + _braces(3, 3, 4, 4)),
     ]
     ops = get_paper_operators(doi="https://doi.org/10.1103/PhysRevD.71.114511")
     assert len(ops) == len(expected)
@@ -771,6 +791,101 @@ def test_paper_operators_gockeler_kinematic_factors():
         factors.append(sym.simplify(K / ratio))
     # the factors come from the normalisation of the operators and of K
     assert factors == [-2 * I, -I, -3, 6 * I]
+
+
+def test_paper_operators_lhpc():
+    """The operators of Dolgov et al. (LHPC) are those of Table II of the paper, with the C-parities of h4lat."""
+    # Table II, written out index by index; the cgmat of a tensor operator holds σ_μν with μ < ν only
+    expected = [
+        _braces(1, 4),
+        _braces(4, 4) - 1 / 3 * (_braces(1, 1) + _braces(2, 2) + _braces(3, 3)),
+        _braces(1, 1, 4) - 1 / 2 * (_braces(2, 2, 4) + _braces(3, 3, 4)),
+        _braces(1, 1, 4, 4) + _braces(2, 2, 3, 3) - _braces(1, 1, 3, 3) - _braces(2, 2, 4, 4),
+        _component(3),
+        _braces(1, 3),
+        _braces(3, 4),
+        _braces(1, 3, 4),
+        _component(1, 2),  # σ_12 = -γ₅σ_34
+        -_component(1, 2, 1) - _component(2, 4, 4),  # -σ_12 D_1 - σ_24 D_4 = γ₅σ_34 D_1 + γ₅σ_31 D_4
+        _component(3, 4) - _component(4, 3),
+        _antisymmetrised(1, 3, 4),
+    ]
+    ops = get_paper_operators(doi="doi:10.1103/PhysRevD.66.034506")
+    assert len(ops) == len(expected)
+    for op, cgmat in zip(ops, expected):
+        assert np.allclose(op.cgmat, cgmat), op.id
+    # those of V2_a to A3 are the C-parities of the paper; it gives the opposite ones for T1, T2, d1 and d2
+    assert [op.C for op in ops] == [1, 1, -1, 1, 1, -1, -1, 1, -1, 1, -1, 1]
+    # V3 and V4 are sums over blocks 1 and 2 of their irrep: completely symmetric, but in no single block
+    assert [op.block for op in ops] == [1, 1, None, None] + [1] * 8
+    # the paper polarises the nucleon in the 3-direction, as the default projector does
+    assert all(op.tr == "= 0" and op.gamma_pol_index == 0 for op in ops)
+
+    # the paper writes the tensor operators with γ₅σ_μν, related to the σ_μν of the cgmat as in the comments above
+    def sigma(mu, nu):
+        """σ_μν = i/2 [γ_μ, γ_ν], for the 1-based indices mu and nu."""
+        return I / 2 * (gamma_mu[mu - 1] * gamma_mu[nu - 1] - gamma_mu[nu - 1] * gamma_mu[mu - 1])
+
+    assert gamma5 * sigma(3, 4) == -sigma(1, 2)
+    assert gamma5 * sigma(3, 1) == -sigma(2, 4)
+
+
+def test_paper_operators_lhpc_momenta():
+    """K at p = 0 is non-zero exactly for the operators that Dolgov et al. measure at zero momentum (Table II)."""
+    # column P of Table II: the number of non-zero components of the nucleon momentum P = (p_1, 0, 0)
+    n_momentum = [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1]
+    for op, n in zip(get_paper_operators("LHPC:2002xzk"), n_momentum):
+        K_rest = sym.simplify(op.K.subs({p1: 0, p2: 0, p3: 0}).subs(E, mN))
+        K_moving = sym.simplify(op.K.subs({p2: 0, p3: 0}).subs(E, sym.sqrt(mN**2 + p1**2)))
+        assert (K_rest != 0) == (n == 0), op.id
+        assert K_moving != 0, op.id
+
+
+def test_paper_operators_gockeler_1996():
+    """The operators of Göckeler et al. (1996) are those of Table II of the paper, with its C-parities."""
+    # Table II, written out index by index
+    expected = [
+        _braces(1, 4),
+        _braces(4, 4) - 1 / 3 * (_braces(1, 1) + _braces(2, 2) + _braces(3, 3)),
+        _braces(1, 1, 4) - 1 / 2 * (_braces(2, 2, 4) + _braces(3, 3, 4)),
+        _braces(1, 1, 4, 4) + _braces(2, 2, 3, 3) - _braces(1, 1, 3, 3) - _braces(2, 2, 4, 4),
+        _component(2),
+        _braces(2, 1, 4),
+        _antisymmetrised(2, 1, 4),
+    ]
+    ops = get_paper_operators(doi="10.1103/PhysRevD.53.2317")
+    assert len(ops) == len(expected)
+    for op, cgmat in zip(ops, expected):
+        assert np.allclose(op.cgmat, cgmat), op.id
+    assert [op.C for op in ops] == [1, 1, -1, 1, 1, 1, 1]
+    # v_3 and v_4 are sums over blocks 1 and 2 of their irrep: completely symmetric, but in no single block
+    assert [op.block for op in ops] == [1, 1, None, None, 1, 1, 1]
+    # the axial operators use the projector polarised in the 2-direction, as in the paper
+    assert [op.gamma_pol_index for op in ops] == [0, 0, 0, 0, 1, 1, 1]
+    assert all(op.tr == "= 0" for op in ops)
+
+
+def test_paper_operators_gockeler_1996_kinematic_factors():
+    """At the momentum of the paper, K of each operator of Göckeler et al. (1996) is a constant times its Eq. (25)."""
+
+    def on_shell(expr, at_rest):
+        """*expr* at p = 0 (E = m_N) if *at_rest*, otherwise at p = (p_1, 0, 0) with E = √(m_N² + p_1²)."""
+        if at_rest:
+            return expr.subs({p1: 0, p2: 0, p3: 0}).subs(E, mN)
+        return expr.subs({p2: 0, p3: 0}).subs(E, sym.sqrt(mN**2 + p1**2))
+
+    # the ratios R of Eq. (25), for v_2a, v_2b, v_3, v_4, a_0, a_2 and d_2 (without the moments and 1/(2κ Z)),
+    # and the momenta of Table II: p = 0 for v_2b and a_0, p = (p_1, 0, 0) for the others
+    ratios = [I * p1, -mN, -(p1**2), E * p1**2, I * mN / (2 * E), mN * p1 / 6, mN * p1 / 3]
+    at_rest = [False, True, False, False, True, False, False]
+    ops = get_paper_operators("Gockeler:1995wg")
+    factors = [sym.simplify(on_shell(op.K / ratio, rest)) for op, ratio, rest in zip(ops, ratios, at_rest)]
+    # the factors come from the normalisation of the operators and of K
+    assert factors == [-2 * I, -I, -3, 6 * I, -2, 12, 6]
+    # with the default projector, polarised in the 3-direction, K of a_0, a_2 and d_2 would vanish
+    for op, rest in zip(ops[4:], at_rest[4:]):
+        op.set_polarization_matrix(0)
+        assert sym.simplify(on_shell(op.K, rest)) == 0, op.id
 
 
 def test_paper_operators_notebook_code():

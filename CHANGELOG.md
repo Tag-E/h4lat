@@ -7,6 +7,12 @@ Changes marked **Breaking** can change the results or the code of existing users
 
 ## [Unreleased]
 
+### Added
+
+- `get_paper_operators`: the operators of Dolgov et al. (LHPC and SESAM, 2002), `"LHPC:2002xzk"`, and of
+  Göckeler et al. (1996), `"Gockeler:1995wg"`. The axial operators of Göckeler et al. (1996) use the polarisation
+  projector `gamma_pol_index=1`, which polarises the nucleon in the 2-direction as in the paper.
+
 ### Changed
 
 - `cg_calc` reads the H(4) matrices (`cg_calc.h4_mat`) only when it computes new CG coefficients, and then once

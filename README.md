@@ -404,6 +404,8 @@ for op in ops:
 | `Taggi:2026skn` | E. Taggi et al., [Phys. Rev. D 114, 074507 (2026)](https://doi.org/10.1103/kknt-zxsw), [arXiv:2605.02808](https://arxiv.org/abs/2605.02808) | 2 derivatives: vector, irrep (4,2); axial, irrep (4,3); tensor, irreps (3,2), (3,3) and (6,2) |
 | `Alexandrou:2026tjs` | C. Alexandrou et al., [arXiv:2607.03458](https://doi.org/10.48550/arXiv.2607.03458) (2026) | vector: 2 derivatives, irrep (4,2); 3 derivatives, irreps (1,2) and (6,2) |
 | `Gockeler:2004wp` | M. Göckeler et al., [Phys. Rev. D 71, 114511 (2005)](https://doi.org/10.1103/PhysRevD.71.114511), [arXiv:hep-ph/0410187](https://arxiv.org/abs/hep-ph/0410187) | vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1) |
+| `LHPC:2002xzk` | D. Dolgov et al. (LHPC and SESAM), [Phys. Rev. D 66, 034506 (2002)](https://doi.org/10.1103/PhysRevD.66.034506), [arXiv:hep-lat/0201021](https://arxiv.org/abs/hep-lat/0201021) | vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1); axial: no derivative, irrep (4,4); 1 derivative, irreps (6,4) and (6,1); 2 derivatives, irreps (4,3) and (8,1); tensor: no derivative, irrep (6,1); 1 derivative, irrep (8,1) |
+| `Gockeler:1995wg` | M. Göckeler et al., [Phys. Rev. D 53, 2317 (1996)](https://doi.org/10.1103/PhysRevD.53.2317), [arXiv:hep-lat/9508004](https://arxiv.org/abs/hep-lat/9508004) | vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1); axial: no derivative, irrep (4,4); 2 derivatives, irreps (4,3) and (8,1) |
 
 Each operator is a linear combination of operators of the bundled database
 (`Operator_from_database(id)`), built with the operator arithmetic of
