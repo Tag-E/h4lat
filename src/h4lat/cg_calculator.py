@@ -41,7 +41,6 @@ Main entry point: cg_calc.
 Module-level helpers: get_multiplicities, latex_print_multiplicities.
 """
 
-
 ######################## Library Imports ################################
 
 import functools
