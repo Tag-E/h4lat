@@ -67,6 +67,20 @@ Commit messages have a short title line, an empty line, then one `- ` bullet per
 By contributing, you agree that your contribution is licensed under the
 [GNU General Public License v3.0 or later](LICENSE), like the rest of h4lat.
 
+## Dependency updates (maintainer)
+
+Dependabot (`.github/dependabot.yml`) checks once a month for new versions of the GitHub Actions used in
+`.github/workflows/` and of the pre-commit hooks (black, ruff). It opens one pull request for each of the two
+groups, and the tests run on it.
+
+A new black or ruff version can reformat the code or report new lint issues, and then the `lint` job of the pull
+request fails. In that case, check out the pull request branch, run `pre-commit run --all-files` and the tests,
+then commit and push the changes to the same branch. Merge with *Squash and merge*, and rewrite the commit
+message in the usual format.
+
+The Python dependencies in `pyproject.toml` are left out on purpose: h4lat does not pin their versions, so there
+is nothing to bump.
+
 ## Making a release (maintainer)
 
 1. Set the new `version` in `pyproject.toml`, `version` and `date-released` in `CITATION.cff`, and the

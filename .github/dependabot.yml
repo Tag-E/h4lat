@@ -1,0 +1,36 @@
+# Dependabot configuration. Reference of all the options:
+# https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+#
+# Once a month, Dependabot looks for new versions of the tools pinned in this repository and opens a pull request
+# that updates them. The "tests" workflow runs on that pull request, so every update is linted and tested before it
+# is merged (see CONTRIBUTING.md, "Dependency updates").
+#
+# The Python dependencies in pyproject.toml are left out on purpose: h4lat is a library and does not pin their
+# versions (the user's environment decides which numpy or sympy is installed), so there is nothing to bump.
+# Security alerts for them are switched on in the repository settings and do not need this file.
+version: 2
+updates:
+  # The actions used by the workflows in .github/workflows/ (actions/checkout@v7, actions/setup-python@v7, …)
+  - package-ecosystem: "github-actions"
+    directory: "/" # for GitHub Actions, "/" means the workflow files in .github/workflows/
+    schedule:
+      interval: "monthly" # on the first day of each month
+    # All the action updates in a single pull request, instead of one pull request per action
+    groups:
+      github-actions:
+        patterns: ["*"]
+    # Only propose versions released at least 7 days ago: a broken or compromised release is usually withdrawn
+    # within a few days
+    cooldown:
+      default-days: 7
+
+  # The hook versions (rev:) in .pre-commit-config.yaml: black and ruff
+  - package-ecosystem: "pre-commit"
+    directory: "/" # where .pre-commit-config.yaml is
+    schedule:
+      interval: "monthly"
+    groups:
+      pre-commit:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7

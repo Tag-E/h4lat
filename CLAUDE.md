@@ -135,5 +135,7 @@ Don't build it at import time.
   publish a GitHub release with tag `vX.Y.Z`. `.github/workflows/publish.yml` checks that the tag matches
   `pyproject.toml` and uploads to PyPI (Trusted Publishing), and Zenodo archives the release.
   `.github/workflows/tests.yml` runs pre-commit and pytest (Python 3.11–3.14) on every push and PR.
+  `.github/dependabot.yml` opens monthly grouped PRs for the GitHub Actions and the pre-commit hook revs, but not
+  for the Python dependencies, which are unpinned (handling them: CONTRIBUTING.md, "Dependency updates").
 - `h4lat-catalogue` writes `operator_catalogue_*.pdf` to the working directory (gitignored). `*.ipynb` files are
   gitignored except `examples/*.ipynb`, and so are `*.txt` files in the repository root (local notes).
