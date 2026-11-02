@@ -7,6 +7,8 @@ Changes marked **Breaking** can change the results or the code of existing users
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-02
+
 ### Added
 
 - `get_paper_operators`: the operators of Dolgov et al. (LHPC and SESAM, 2002), `"LHPC:2002xzk"`, and of
@@ -105,6 +107,7 @@ Initial version: the CG calculator for H(4) (projection formula of Sakata), a bu
 coefficients, and the `Operator` class with kinematic factor, C-parity, trace condition, index symmetry and
 LaTeX output.
 
-[Unreleased]: https://github.com/Tag-E/h4lat/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Tag-E/h4lat/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Tag-E/h4lat/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Tag-E/h4lat/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Tag-E/h4lat/commit/ddbd177

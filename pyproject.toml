@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 name = "h4lat"
 # Bump for every release, together with CHANGELOG.md, CITATION.cff and the README (see CONTRIBUTING.md,
 # "Making a release"); the release tag must be "v" + this version
-version = "0.2.0"
+version = "0.3.0"
 description = "Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)"
 readme = "README.md"
 # The module headers grant "version 3 of the License, or (at your option) any later version"
