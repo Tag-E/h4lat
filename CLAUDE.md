@@ -112,7 +112,10 @@ are overwritten. Theory pages: `The-hypercubic-group`, `Clebsch-Gordan-coefficie
 `tests/test_wiki.py`:
 - links between pages are full URLs `https://github.com/Tag-E/h4lat/wiki/Page-Name#section` (GitHub documents only
   those for Markdown wikis), and every page is linked from `_Sidebar.md`;
-- inline math is `` $`…`$ ``, display math a ```` ```math ```` block (MathJax: no `\slashed`, no footnotes);
+- inline math is `` $`{…}`$ ``, braced: GitHub's MathJax 4 otherwise lets the browser break it at top-level
+  operators (=, +, ⊗, `\,`). Display math is a ```` ```math ```` block outside lists and quotes. No `\operatorname`
+  (GitHub refuses it and shows "The following macros are not allowed": use `\mathrm{Tr}`; `GITHUB_BLOCKED_MACROS` in
+  the test lists the others), no `\slashed`, no footnotes, no formulas inside bold text;
 - every `h4lat.…` name and every `from h4lat… import …` in the pages and the README must exist;
 - no version numbers in the wiki (use `vX.Y.Z`), so that a release does not have to touch it.
 

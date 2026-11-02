@@ -1,6 +1,6 @@
 To browse the [operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database), write a PDF catalogue of
 its operators. For each operator it lists the expression, the kinematic factor, the C-parity, the trace condition and
-the index symmetry, grouped by Dirac structure, number of indices and $`H(4)`$ irrep.
+the index symmetry, grouped by Dirac structure, number of indices and $`{H(4)}`$ irrep.
 
 ## From the command line
 
@@ -54,5 +54,5 @@ other group.
 
 The kinematic factors are computed in exact arithmetic: the Clebsch-Gordan coefficients, computed in floating point,
 are first converted to the exact numbers they approximate (fractions such as ⅓, or square roots of fractions such as
-$`1/\sqrt{2}`$). Until October 2026 they entered SymPy as floats, and some kinematic factors that vanish (operators
+$`{1/\sqrt{2}}`$). Until October 2026 they entered SymPy as floats, and some kinematic factors that vanish (operators
 176, 524, 527, 741 and 744 of the current numbering) were printed as tiny numbers of order 1e-16 instead of 0.

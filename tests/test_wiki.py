@@ -144,15 +144,107 @@ def test_h4lat_names_exist(path):
                 assert _resolves(f"{module}.{name}"), f"{path.name}: 'from {module} import {name}' fails"
 
 
-@pytest.mark.parametrize("path", sorted(WIKI.glob("*.md")), ids=_ids(sorted(WIKI.glob("*.md"))))
-def test_math_delimiters_are_balanced(path):
-    """Every inline formula $`…`$ is closed in its paragraph, and every ```math block is closed.
+def _formulas(markdown: str) -> list[tuple[int, str, bool]]:
+    """The formulas of a page, as (line number, TeX, display) triples.
 
-    An unclosed delimiter does not raise any error on GitHub: the page just shows the raw LaTeX.
+    Display formulas are the ```math blocks (the line number is that of the opening fence); in-line formulas are the
+    $`…`$ spans outside the fenced code blocks.
+    """
+    formulas, fence, start, block = [], None, 0, []
+    for number, line in enumerate(markdown.split("\n"), start=1):
+        opening = re.match(r"^[ \t>]*```(\w*)[ \t]*$", line)
+        if fence is None and opening:
+            fence, start, block = opening.group(1), number, []
+        elif fence is not None and re.match(r"^[ \t>]*```[ \t]*$", line):
+            if fence == "math":
+                formulas.append((start, "\n".join(block), True))
+            fence = None
+        elif fence is not None:
+            block.append(line)
+        else:
+            formulas += [(number, tex, False) for tex in re.findall(r"\$`(.+?)`\$", line)]
+    return formulas
+
+
+def _is_one_group(tex: str) -> bool:
+    """Whether *tex* is a single {…} group, from its first to its last character (\\{ and \\} are not braces)."""
+    depth = 0
+    for i, char in enumerate(tex):
+        if char not in "{}" or (i > 0 and tex[i - 1] == "\\"):
+            continue
+        depth += 1 if char == "{" else -1
+        if depth == 0 and i < len(tex) - 1:
+            return False  # the first group closes before the end, e.g. {a} + {b}
+    return tex.startswith("{") and depth == 0
+
+
+# Macros that GitHub's math renderer refuses: it replaces the whole formula with "The following macros are not
+# allowed: …". GitHub does not publish its list. \operatorname is confirmed (it broke a formula of this wiki: write
+# \mathrm{Tr} instead of \operatorname{Tr}); the others are reported as refused or unsupported by other projects.
+# \slashed is not a MathJax macro at all.
+# (fmt: off keeps black from putting one macro per line)
+# fmt: off
+GITHUB_BLOCKED_MACROS = {
+    "operatorname", "DeclareMathOperator", "newcommand", "renewcommand", "def", "href", "bm", "boldsymbol",
+    "label", "ref", "eqref", "verb", "intertext", "mathds", "colorbox", "fcolorbox", "definecolor", "slashed",
+    "require",
+}
+# fmt: on
+
+WIKI_FILES = sorted(WIKI.glob("*.md"))
+
+
+@pytest.mark.parametrize("path", WIKI_FILES, ids=_ids(WIKI_FILES))
+def test_math_delimiters_are_balanced(path):
+    """Every ```math block is closed, and every in-line formula $`…`$ opens and closes on the same source line.
+
+    An unclosed delimiter does not raise any error on GitHub: the page just shows the raw LaTeX. A formula spread
+    over two source lines may not be recognised as a formula at all.
     """
     markdown = path.read_text(encoding="utf-8")
-    fences = re.findall(r"^[ \t]*```", markdown, re.MULTILINE)
+    fences = re.findall(r"^[ \t>]*```", markdown, re.MULTILINE)
     assert len(fences) % 2 == 0, f"{path.name}: a fenced block (``` or ```math) is not closed"
-    for paragraph in re.split(r"\n[ \t>]*\n", _prose(markdown)):
-        opened, closed = paragraph.count("$`"), paragraph.count("`$")
-        assert opened == closed, f"{path.name}: unbalanced $`…`$ in the paragraph starting {paragraph[:60]!r}"
+    for line in _prose(markdown).split("\n"):
+        assert line.count("$`") == line.count("`$"), f"{path.name}: $`…`$ split over two lines: {line[:60]!r}"
+
+
+@pytest.mark.parametrize("path", WIKI_FILES, ids=_ids(WIKI_FILES))
+def test_math_uses_no_macros_that_github_refuses(path):
+    """No formula uses a macro that GitHub's math renderer refuses (see GITHUB_BLOCKED_MACROS)."""
+    for number, tex, _ in _formulas(path.read_text(encoding="utf-8")):
+        blocked = set(re.findall(r"\\([A-Za-z]+)", tex)) & GITHUB_BLOCKED_MACROS
+        # (built outside the f-string: Python 3.11 allows no backslash inside the {…} of an f-string)
+        macros = ", ".join("\\" + macro for macro in sorted(blocked))
+        assert not blocked, f"{path.name}:{number}: GitHub refuses {macros} in {tex!r}"
+
+
+@pytest.mark.parametrize("path", WIKI_FILES, ids=_ids(WIKI_FILES))
+def test_inline_math_cannot_be_split(path):
+    """Every in-line formula is one braced group, $`{…}`$, so that it is never split over two lines.
+
+    GitHub renders math with MathJax 4, which lets the browser break an in-line formula at its top-level operators
+    and spaces (=, +, ⊗, \\, …) when the line is full, e.g. in a narrow table cell. A braced group is a single atom
+    for TeX, with no break point at the top level.
+    """
+    for number, tex, display in _formulas(path.read_text(encoding="utf-8")):
+        if not display:
+            assert _is_one_group(tex), f"{path.name}:{number}: write $`{{{tex}}}`$ instead of $`{tex}`$"
+
+
+@pytest.mark.parametrize("path", WIKI_FILES, ids=_ids(WIKI_FILES))
+def test_math_is_placed_where_github_renders_it(path):
+    """Formulas are not in places where GitHub shows the raw LaTeX or breaks the layout.
+
+    - A ```math block inside a list item (an indented fence) or a quote can be shown as a code block: display
+      equations stand outside lists and quotes.
+    - A formula inside bold text (**…$`x`$…**) may not be recognised.
+    - A "|" inside a formula in a table row splits the cell before the formula is recognised.
+    """
+    markdown = path.read_text(encoding="utf-8")
+    for number, line in enumerate(markdown.split("\n"), start=1):
+        assert not re.match(r"^([ \t]+|[ \t]*>[ \t>]*)```math", line), f"{path.name}:{number}: ```math in a list/quote"
+        for bold in re.findall(r"\*\*(.+?)\*\*", line):
+            assert "$`" not in bold, f"{path.name}:{number}: formula inside bold text: {bold!r}"
+        if line.lstrip().startswith("|"):
+            for tex in re.findall(r"\$`(.+?)`\$", line):
+                assert "|" not in tex, f"{path.name}:{number}: '|' inside a formula in a table: {tex!r}"

@@ -1,8 +1,8 @@
-This page shows how to decompose tensor products of $`H(4)`$ irreps and how to get their Clebsch-Gordan (CG)
+This page shows how to decompose tensor products of $`{H(4)}`$ irreps and how to get their Clebsch-Gordan (CG)
 coefficients, from the bundled database or by computing them. The method is explained on the theory pages
 [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) and
 [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients). Irreps are given by
-their labels `(k, l)`, the irrep $`\tau^{(k)}_l`$ of dimension `k`.
+their labels `(k, l)`, the irrep $`{\tau^{(k)}_l}`$ of dimension `k`.
 
 ## Tensor-product decomposition
 
@@ -89,6 +89,6 @@ are in [CONTRIBUTING.md](https://github.com/Tag-E/h4lat/blob/main/CONTRIBUTING.m
 ## From CG blocks to operators
 
 A column of a CG block, reshaped into a tensor with one index per factor, gives the coefficients of an operator:
-`cg_remapping(column, n)` reshapes a column of length $`4^n`$ into shape `(4,)*n`, and `cg_remapping_T` does the same
-for the tensor structure, whose first factor (6,1) is the antisymmetric pair of indices of $`\sigma_{\mu\nu}`$. See
+`cg_remapping(column, n)` reshapes a column of length $`{4^n}`$ into shape `(4,)*n`, and `cg_remapping_T` does the same
+for the tensor structure, whose first factor (6,1) is the antisymmetric pair of indices of $`{\sigma_{\mu\nu}}`$. See
 [Building operators](https://github.com/Tag-E/h4lat/wiki/Building-operators).

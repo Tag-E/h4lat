@@ -3,8 +3,8 @@
 - M. Baake, B. Gemünden and R. Oedingen, *Structure and representations of the symmetry group of the
   four-dimensional cube*, J. Math. Phys. **23**, 944–953 (1982); Erratum: J. Math. Phys. **23**, 2595 (1982),
   [doi:10.1063/1.525461](https://doi.org/10.1063/1.525461).
-  The irreps, character table and generator matrices of $`H(4)`$ used by h4lat. For the irrep $`\tau^{(2)}_2`$, h4lat
-  uses a different generator $`\alpha`$: see
+  The irreps, character table and generator matrices of $`{H(4)}`$ used by h4lat. For the irrep $`{\tau^{(2)}_2}`$, h4lat
+  uses a different generator $`{\alpha}`$: see
   [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group#generators).
 - I. Sakata, *A general method for obtaining Clebsch-Gordan coefficients of finite groups. I. Its application to point
   and space groups*, J. Math. Phys. **15**, 1702–1709 (1974),
@@ -19,7 +19,7 @@
   operators for moments of the structure functions and their transformation under the hypercubic group*,
   Phys. Rev. D **54**, 5705–5714 (1996), [doi:10.1103/PhysRevD.54.5705](https://doi.org/10.1103/PhysRevD.54.5705),
   [arXiv:hep-lat/9602029](https://arxiv.org/abs/hep-lat/9602029).
-  The classification of the operators $`\bar\psi \, \Gamma \, D \cdots D \, \psi`$ under $`H(4)`$ and C-parity, and
+  The classification of the operators $`{\bar\psi \, \Gamma \, D \cdots D \, \psi}`$ under $`{H(4)}`$ and C-parity, and
   their mixing under renormalisation.
 
 ## Operators used in published works

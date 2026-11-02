@@ -1,4 +1,4 @@
-`get_paper_operators` returns the $`H(4)`$-irreducible operators used in published works. Select the paper by its
+`get_paper_operators` returns the $`{H(4)}`$-irreducible operators used in published works. Select the paper by its
 INSPIRE texkey or by its DOI. Each operator's `id` is its label in the paper:
 
 ```python

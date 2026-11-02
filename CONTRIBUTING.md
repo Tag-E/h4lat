@@ -68,11 +68,15 @@ the web editor of the wiki are overwritten.
 - Link to wiki pages with full URLs, `https://github.com/Tag-E/h4lat/wiki/Page-Name#section`: GitHub documents only
   those for Markdown wikis. The section is the heading in lower case, with spaces replaced by `-` and punctuation
   removed.
-- Write inline math as `` $`…`$ `` and display math in a ` ```math ` block (GitHub renders both with MathJax). Plain
-  `$…$` can be broken by Markdown characters such as `_` and `*`. MathJax has no `\slashed`: write `\gamma_\rho p_\rho`.
+- Write inline math as `` $`{…}`$ ``, with the braces: GitHub renders math with MathJax 4, which otherwise lets the
+  browser split a formula over two lines at an operator (=, +, ⊗, …), e.g. in a table cell. Plain `$…$` can be broken
+  by Markdown characters such as `_` and `*`. Write display math in a ` ```math ` block, outside lists and quotes,
+  and keep formulas out of bold text.
+- GitHub refuses some macros and shows "The following macros are not allowed: …" instead of the formula: write
+  `\mathrm{Tr}`, not `\operatorname{Tr}`. MathJax has no `\slashed`: write `\gamma_\rho p_\rho`.
 - Don't write version numbers in the wiki: they would be one more place to update at every release.
-- `python -m pytest tests/test_wiki.py` checks the links, the sidebar, the names of h4lat used in the pages and the
-  math delimiters. Check the rendering on the wiki after the merge.
+- `python -m pytest tests/test_wiki.py` checks the links, the sidebar, the names of h4lat used in the pages, and the
+  math: delimiters, braces, refused macros and placement. Check the rendering on the wiki after the merge.
 
 The wiki has to be set up once (maintainer): in *Settings → General → Features*, tick *Wikis* and *Restrict editing
 to collaborators only*; open the *Wiki* tab and save a first page with any content, which creates the wiki

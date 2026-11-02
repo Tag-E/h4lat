@@ -1,6 +1,6 @@
-**h4lat** computes the Clebsch-Gordan coefficients of the hypercubic group $`H(4)`$ and builds $`H(4)`$-irreducible
-lattice operators $`\bar\psi \, \Gamma \, D \cdots D \, \psi`$, with
-$`\Gamma = \mathbf{1}, \gamma_5, \gamma_\mu, \gamma_\mu\gamma_5, \sigma_{\mu\nu}`$, for lattice QCD calculations of the
+**h4lat** computes the Clebsch-Gordan coefficients of the hypercubic group $`{H(4)}`$ and builds $`{H(4)}`$-irreducible
+lattice operators $`{\bar\psi \, \Gamma \, D \cdots D \, \psi}`$, with
+$`{\Gamma = \mathbf{1}, \gamma_5, \gamma_\mu, \gamma_\mu\gamma_5, \sigma_{\mu\nu}}`$, for lattice QCD calculations of the
 moments of parton distribution functions. For every operator it gives the kinematic factor, the C-parity, the trace
 condition and the index symmetry.
 

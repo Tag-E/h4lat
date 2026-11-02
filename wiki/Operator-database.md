@@ -1,6 +1,6 @@
-h4lat ships with a database of 1360 $`H(4)`$-irreducible operators $`\bar\psi \, \Gamma \, D \cdots D \, \psi`$: every
-Dirac structure S ($`\Gamma = \mathbf{1}`$), P ($`\gamma_5`$), V ($`\gamma_\mu`$), A ($`\gamma_\mu\gamma_5`$) and T
-($`\sigma_{\mu\nu}`$), with zero to three derivatives. How they are built is explained on the theory page
+h4lat ships with a database of 1360 $`{H(4)}`$-irreducible operators $`{\bar\psi \, \Gamma \, D \cdots D \, \psi}`$: every
+Dirac structure S ($`{\Gamma = \mathbf{1}}`$), P ($`{\gamma_5}`$), V ($`{\gamma_\mu}`$), A ($`{\gamma_\mu\gamma_5}`$) and T
+($`{\sigma_{\mu\nu}}`$), with zero to three derivatives. How they are built is explained on the theory page
 [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators).
 
 ## Operator IDs
@@ -56,7 +56,7 @@ some = get_OperatorList(keys="V1 A1")         # V and A with one derivative (IDs
 
 A single operator is loaded with `Operator_from_database(id)`.
 
-Operators without Lorentz indices ($`\bar\psi\psi`$ and $`\bar\psi\gamma_5\psi`$) have a 0-index `op.cgmat`, of shape
+Operators without Lorentz indices ($`{\bar\psi\psi}`$ and $`{\bar\psi\gamma_5\psi}`$) have a 0-index `op.cgmat`, of shape
 `()`.
 
 ```python

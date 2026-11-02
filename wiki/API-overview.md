@@ -5,7 +5,7 @@ a detailed docstring: use `help(h4lat.cg_calc)`, or `h4lat.cg_calc?` in Jupyter.
 
 | Module | Contents |
 |--------|----------|
-| `h4lat.cg_calculator` | `cg_calc`, `get_multiplicities`, the $`H(4)`$ group constants and generator matrices |
+| `h4lat.cg_calculator` | `cg_calc`, `get_multiplicities`, the $`{H(4)}`$ group constants and generator matrices |
 | `h4lat.moments_operator` | `Operator`, the operator database, kinematic factors, C-parity and symmetry analysis, HDF5 I/O, the PDF catalogue |
 | `h4lat.kinematic_data` | Euclidean gamma matrices, symbolic momenta, polarisation projectors |
 | `h4lat.utilities` | Permutation parity, perfect-square test, all-equal check |
@@ -23,7 +23,7 @@ a detailed docstring: use `help(h4lat.cg_calc)`, or `h4lat.cg_calc?` in Jupyter.
 | `rep_label_list`, `rep_dim_list`, `n_rep` | The 20 irrep labels `(k, l)`, their dimensions, and their number |
 | `irrep_index`, `irrep_dim`, `irrep_texname` | Position in `rep_label_list`, dimension and LaTeX name of an irrep label |
 | `char_table`, `class_orders` | The character table (irreps × classes) and the number of elements of each class |
-| `n_ele_h4`, `n_ele_s4` | The orders of $`H(4)`$ (384) and $`S_4`$ (24) |
+| `n_ele_h4`, `n_ele_s4` | The orders of $`{H(4)}`$ (384) and $`{S_4}`$ (24) |
 
 ## Operators
 
@@ -49,7 +49,7 @@ a detailed docstring: use `help(h4lat.cg_calc)`, or `h4lat.cg_calc?` in Jupyter.
 |------|-------------|
 | `cg_remapping`, `cg_remapping_T` | Reshape a Clebsch-Gordan column into the `cgmat` tensor of an operator (`_T` for the tensor structure) |
 | `symO_from_Cgmat` | Symbolic expression of an operator |
-| `diracO_from_cgmat` | Dirac matrix $`M(p)`$ of an operator ([theory](https://github.com/Tag-E/h4lat/wiki/Lattice-operators#kinematic-factor)) |
+| `diracO_from_cgmat` | Dirac matrix $`{M(p)}`$ of an operator ([theory](https://github.com/Tag-E/h4lat/wiki/Lattice-operators#kinematic-factor)) |
 | `Kfactor_from_diracO` | Kinematic factor from the Dirac matrix |
 | `latexO_from_diracO` | LaTeX string of an operator |
 | `C_parity` | C-parity of an operator |
