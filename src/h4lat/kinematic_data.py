@@ -57,7 +57,7 @@ from .utilities import is_square
 
 # Euclidean Dirac gamma matrices.
 # The Euclidean metric is δ_μν (all positive), so {γ_μ, γ_ν} = 2δ_μν.
-# γ₁, γ₂, γ₃ are anti-Hermitian; γ₄ and γ₅ are Hermitian.
+# All of them, and γ₅ = γ₁γ₂γ₃γ₄, are Hermitian (γ_μ† = γ_μ), as usual for Euclidean gamma matrices.
 
 gamma1 = sym.Matrix([[0, 0, 0, I], [0, 0, I, 0], [0, -I, 0, 0], [-I, 0, 0, 0]])
 gamma2 = sym.Matrix([[0, 0, 0, -1], [0, 0, 1, 0], [0, 1, 0, 0], [-1, 0, 0, 0]])

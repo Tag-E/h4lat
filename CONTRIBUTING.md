@@ -49,18 +49,41 @@ obvious. The code should be readable by someone who knows neither the libraries 
   every stage after it (H(4) matrices → CG coefficients → operators).
 - **Operator IDs** are hard-coded in `get_op_selection` and `get_paper_operators`. Any change to the content or
   the order of the operator database must update them (use the shift report of `regenerate_data.py`), and the
-  README must note the change for existing users.
+  wiki must note the change for existing users (a dated note on the page concerned, e.g. "Operator database").
 - **`examples/paper_operators.ipynb`** shows the source of `get_paper_operators`, and a test checks that they
   match. Edit both together, and keep the operator tables inside their `# fmt: off` / `# fmt: on` region.
 - **New public names** must be imported in `src/h4lat/__init__.py` and listed in `__all__`.
 
 `CLAUDE.md` describes the architecture and these invariants in more detail.
 
+## Documentation (wiki)
+
+The documentation is the [wiki](https://github.com/Tag-E/h4lat/wiki). Its pages are the Markdown files of the
+`wiki/` folder: edit them there, in a pull request like the code. At every push to `main` that changes `wiki/`, the
+workflow `.github/workflows/wiki.yml` copies the folder to the wiki (a separate git repository), so changes made in
+the web editor of the wiki are overwritten.
+
+- The file name is the page name: `Operator-database.md` is the page "Operator database". `_Sidebar.md` and
+  `_Footer.md` are shown on every page; add every new page to `_Sidebar.md`.
+- Link to wiki pages with full URLs, `https://github.com/Tag-E/h4lat/wiki/Page-Name#section`: GitHub documents only
+  those for Markdown wikis. The section is the heading in lower case, with spaces replaced by `-` and punctuation
+  removed.
+- Write inline math as `` $`…`$ `` and display math in a ` ```math ` block (GitHub renders both with MathJax). Plain
+  `$…$` can be broken by Markdown characters such as `_` and `*`. MathJax has no `\slashed`: write `\gamma_\rho p_\rho`.
+- Don't write version numbers in the wiki: they would be one more place to update at every release.
+- `python -m pytest tests/test_wiki.py` checks the links, the sidebar, the names of h4lat used in the pages and the
+  math delimiters. Check the rendering on the wiki after the merge.
+
+The wiki has to be set up once (maintainer): in *Settings → General → Features*, tick *Wikis* and *Restrict editing
+to collaborators only*; open the *Wiki* tab and save a first page with any content, which creates the wiki
+repository (the workflow replaces the page); then run the workflow (*Actions → wiki → Run workflow*), or push a change
+to `wiki/`.
+
 ## Pull requests
 
 For anything larger than a small fix, please open an issue first, so we can agree on the approach. A pull
-request should pass the tests and pre-commit, and update the README, the CLI help, the example notebooks
-and `CHANGELOG.md` (section "Unreleased") when it changes what users see.
+request should pass the tests and pre-commit, and update the wiki (`wiki/`), the README, the CLI help, the example
+notebooks and `CHANGELOG.md` (section "Unreleased") when it changes what users see.
 
 Commit messages have a short title line, an empty line, then one `- ` bullet per change.
 

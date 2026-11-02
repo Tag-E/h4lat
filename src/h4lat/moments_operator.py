@@ -767,12 +767,13 @@ def Kfactor_from_diracO(operator: sym.core.add.Add, gamma_pol_index: int = 0) ->
 
     The kinematic factor is defined as the ratio
 
-        K = Tr[Γ_pol (-i p̸ + m) M(p) (-i p̸ + m)] / Tr[Γ_pol (-i p̸ + m) γ₄ (-i p̸ + m)] / (2E)
+        K = Tr[Γ_pol (-i p̸ + m) M(p) (-i p̸ + m)] / (2E Tr[Γ_pol (-i p̸ + m)])
 
-    where Γ_pol is the polarisation projector.  The numerator is the tree-level
-    spin-averaged three-point function for operator M(p); the denominator is the
-    same for the two-point function, chosen so that K → 1 for the simplest
-    scalar case.
+    where Γ_pol is the polarisation projector and p̸ = γ_μ p_μ, with p = (p₁, p₂, p₃, iE).
+    The numerator is the tree-level three-point function for operator M(p), the
+    denominator (den_K_list) that of the two-point function times 2E.  On shell
+    (p_μ p_μ = −m²) the denominator equals Tr[Γ_pol (-i p̸ + m) γ₄ (-i p̸ + m)], so
+    K = 1 for the vector charge M = γ₄ (and K = m/E for the scalar M = 𝟙).
 
     After the ratio is formed we use the on-shell dispersion relation E² = p² + m²
     to simplify the expression as far as SymPy can.

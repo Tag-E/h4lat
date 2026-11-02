@@ -15,6 +15,7 @@ python -m pytest -k "not symbolic_sum"                    # skips the slowest te
 python -m pytest tests/test_basic.py::test_known_kinematic_factors
 python -m pytest -k "paper_operators"
 python -m pytest tests/test_cg_correctness.py             # after any change to the generators, CG algorithm or bundled data
+python -m pytest tests/test_wiki.py                       # after any change to wiki/, the README or a public name
 
 pre-commit run --all-files     # black + ruff --fix, configured in pyproject.toml (line length 119)
 ```
@@ -34,8 +35,9 @@ python scripts/regenerate_data.py {h4,cg,operators,all} [--jobs N] [--from-raw] 
 
 h4lat computes Clebsch-Gordan (CG) coefficients of the hypercubic group H(4) (order 384, 20 irreps labelled
 `(dim, l)`) and builds H(4)-irreducible lattice operators ψ̄ Γ D⋯D ψ (Γ = S 𝟙, P γ₅, V γ_μ, A γ_μγ₅, T σ_μν)
-for moments of PDFs, with their kinematic factor K, C-parity, trace condition and index symmetry. The README
-has the physics background and the user-facing API.
+for moments of PDFs, with their kinematic factor K, C-parity, trace condition and index symmetry. The wiki
+(source in `wiki/`, see below) has the user guide and the theory (group theory, Sakata's formula, K, C-parity,
+mixing); the README is a short overview that links to it.
 
 ## Architecture
 
@@ -86,8 +88,8 @@ noise), and reports operator-ID shifts. Then review with `git status src/h4lat/d
   and `Gamma_pol_list` uses `sym.Rational(1, 2)`. Don't let floats back into `diracO_from_cgmat` /
   `Kfactor_from_diracO`, or K values that should vanish become ~1e-16.
 - **Operator IDs** run by nder (0..3), then X in `_X_ORDER = ('S','P','V','A','T')`, then irrep order, copy and
-  column. The bundled DB has 1360 operators (ID ranges table in the README). `make_operator_database(folder,
-  max_nder)` reproduces it.
+  column. The bundled DB has 1360 operators (ID ranges table in `wiki/Operator-database.md`).
+  `make_operator_database(folder, max_nder)` reproduces it.
 - Selection by `X` / `nder` / `keys` (`"V2"` = V with 2 **derivatives**) is shared by the loaders
   (`_operator_filter`) and the PDF catalogue (`_catalogue_selection`, defaults S–T with nder 0–2). `operator_show`
   computes K in parallel with a `ProcessPoolExecutor` (`_kfactor_worker` must stay module-level so it can be
@@ -99,6 +101,24 @@ noise), and reports operator-ID shifts. Then review with `git status src/h4lat/d
 Euclidean gamma matrices, p_μ = (p₁, p₂, p₃, iE), the six polarisation projectors and the K denominators. The
 float→LaTeX table (2.8 M entries) is built lazily by `latex_conversion_table()` so that `import h4lat` stays fast.
 Don't build it at import time.
+
+### `wiki/`: the documentation
+
+The pages of the GitHub wiki (https://github.com/Tag-E/h4lat/wiki) are the Markdown files of `wiki/`: the file name is
+the page name, and `_Sidebar.md` / `_Footer.md` are shown on every page. `.github/workflows/wiki.yml` copies the
+folder to the wiki repository (`Tag-E/h4lat.wiki`) at every push to `main` that changes it, so web edits of the wiki
+are overwritten. Theory pages: `The-hypercubic-group`, `Clebsch-Gordan-coefficients`, `Lattice-operators`,
+`References`; the other pages are the user guide (the former README sections). Conventions, checked by
+`tests/test_wiki.py`:
+- links between pages are full URLs `https://github.com/Tag-E/h4lat/wiki/Page-Name#section` (GitHub documents only
+  those for Markdown wikis), and every page is linked from `_Sidebar.md`;
+- inline math is `` $`…`$ ``, display math a ```` ```math ```` block (MathJax: no `\slashed`, no footnotes);
+- every `h4lat.…` name and every `from h4lat… import …` in the pages and the README must exist;
+- no version numbers in the wiki (use `vX.Y.Z`), so that a release does not have to touch it.
+
+Every number in the theory pages (generators, γ⁽ʲ⁾ = β^{j−1} γ β^{−(j−1)}, the (4,1)⊗(4,1) blocks and their raw
+factors 1, √2, √6, K = 1 for γ₄) was checked against the code: re-check the pages when the generators, the CG
+normalisation or K change.
 
 ## Cross-file invariants (easy to break)
 
@@ -115,9 +135,10 @@ Don't build it at import time.
 - New public names must be imported in `src/h4lat/__init__.py` **and** listed in `__all__`. Tests check this.
 - `_X_ORDER` and `_operator_irreps` are imported by `tests/test_cg_correctness.py` and `scripts/regenerate_data.py`.
   They define which products are bundled.
-- User-visible changes usually come with updates to the README, the CLI help (`cli.py`) and the affected example
-  notebooks, which are then re-executed. The README records breaking changes as dated notes ("Until October
-  2026 …"), and `CHANGELOG.md` lists them under "Unreleased".
+- User-visible changes usually come with updates to the wiki pages in `wiki/`, the README (overview, quick start),
+  the CLI help (`cli.py`) and the affected example notebooks, which are then re-executed. The wiki records breaking
+  changes as dated notes on the page concerned ("Until October 2026 …"), and `CHANGELOG.md` lists them under
+  "Unreleased".
 - The version number appears in `pyproject.toml`, `CITATION.cff` (`version`, `date-released`), `CHANGELOG.md`
   and the README (BibTeX entry and the `git+…@vX.Y.Z` install line). Change them together.
 

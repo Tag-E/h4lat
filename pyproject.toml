@@ -49,6 +49,8 @@ dependencies = [
 # [project] keys must all come before this line.)
 [project.urls]
 Homepage = "https://github.com/Tag-E/h4lat"
+# The documentation is the GitHub wiki, whose pages are written in the wiki/ folder (see CONTRIBUTING.md)
+Documentation = "https://github.com/Tag-E/h4lat/wiki"
 Source = "https://github.com/Tag-E/h4lat"
 Issues = "https://github.com/Tag-E/h4lat/issues"
 Changelog = "https://github.com/Tag-E/h4lat/blob/main/CHANGELOG.md"

@@ -1,0 +1,58 @@
+# GitHub Actions workflow: publish the wiki (https://github.com/Tag-E/h4lat/wiki).
+# The pages of the wiki are written in the wiki/ folder of this repository, so that they are reviewed in pull requests
+# and checked by the tests (tests/test_wiki.py) like the code. A GitHub wiki is a separate git repository
+# (Tag-E/h4lat.wiki), which this workflow updates with the content of wiki/ at every push to main that changes it.
+# Pages edited in the web editor of the wiki are therefore overwritten: edit wiki/ instead.
+#
+# One-time setup (see CONTRIBUTING.md, "Documentation"): the wiki must be enabled in the repository settings, and
+# its first page must be created by hand in the web editor, because the wiki repository only exists after that.
+name: wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ["wiki/**", ".github/workflows/wiki.yml"]
+  workflow_dispatch: # "Run workflow" in the Actions tab, e.g. to publish the wiki for the first time
+
+# Two runs never push to the wiki at the same time: a new run waits for the previous one to finish
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Forks have their own (usually empty) wiki: publish only from the original repository
+    if: github.repository == 'Tag-E/h4lat'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushing to the wiki repository counts as writing to the repository contents
+    steps:
+      - uses: actions/checkout@v7 # get the repository, for the wiki/ folder
+      # Get the wiki repository into wiki-repo/. The job's token gives access to it, and checkout stores the
+      # credentials for the push below, so the token never appears in a URL or in the log. This step fails with
+      # "repository not found" if the wiki has not been created yet (see the one-time setup above).
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki-repo
+      # Make wiki-repo/ an exact copy of wiki/: changed and new pages are copied, and pages deleted from wiki/ are
+      # deleted from the wiki too (--delete). The .git folder of the wiki repository is left alone.
+      - name: Copy wiki/ into the wiki repository
+        run: rsync --archive --delete --exclude .git wiki/ wiki-repo/
+      # Commit as the GitHub Actions bot, with a message that names the commit of this repository the pages come
+      # from, and push. Nothing is pushed if the pages did not change.
+      - name: Commit and push the changes
+        working-directory: wiki-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "The wiki is already up to date"
+            exit 0
+          fi
+          git commit --message "Update from ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}"
+          git push

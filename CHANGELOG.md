@@ -12,9 +12,14 @@ Changes marked **Breaking** can change the results or the code of existing users
 - `get_paper_operators`: the operators of Dolgov et al. (LHPC and SESAM, 2002), `"LHPC:2002xzk"`, and of
   Göckeler et al. (1996), `"Gockeler:1995wg"`. The axial operators of Göckeler et al. (1996) use the polarisation
   projector `gamma_pol_index=1`, which polarises the nucleon in the 2-direction as in the paper.
+- [Wiki](https://github.com/Tag-E/h4lat/wiki) with the documentation: a user guide, and the theory behind the
+  library (the group H(4), the Clebsch-Gordan coefficients from Sakata's formula, the operators, their kinematic
+  factor, C-parity and mixing). Its pages are in `wiki/` and are published by a GitHub Actions workflow.
 
 ### Changed
 
+- The README is a short overview, with links to the wiki, which now holds the detailed usage and the notes on past
+  changes of results ("Until October 2026 …"). PyPI lists the wiki as the documentation.
 - `cg_calc` reads the H(4) matrices (`cg_calc.h4_mat`) only when it computes new CG coefficients, and then once
   per session and folder: loading a product from a database no longer reads 7680 files (0.15 s → under 1 ms).
   The arrays in `h4_mat` are shared between instances and read-only.
@@ -28,6 +33,8 @@ Changes marked **Breaking** can change the results or the code of existing users
 - `operator_show(show=True)` (the default) and `h4lat-catalogue --open` open the PDF on macOS and Windows too, not
   only with `xdg-open`. If no viewer can be started, a warning replaces the error, and the PDF is kept, even with
   `remove_pdf=True`.
+- The docstring of `Kfactor_from_diracO` gave the denominator of K with an extra factor 1/(2E), and said that K = 1
+  for the scalar operator. The computed K is unchanged: K = 1 for ψ̄γ₄ψ (and m_N/E for ψ̄ψ).
 
 ## [0.2.0] - 2026-10-23
 
