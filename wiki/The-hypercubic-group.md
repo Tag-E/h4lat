@@ -149,7 +149,7 @@ conjugacy class:
 
 ```math
 a_\sigma = \left\langle \chi^{(\sigma)}, \chi^{(\mu)} \chi^{(\nu)} \right\rangle
-= \frac{1}{384} \sum_{i=1}^{20} k_i \, \chi^{(\sigma)*}_i \, \chi^{(\mu)}_i \, \chi^{(\nu)}_i , \tag{3}
+= \frac{1}{384} \sum_{i=1}^{20} k_i \, \chi^{(\sigma)}_i \, \chi^{(\mu)*}_i \, \chi^{(\nu)*}_i , \tag{3}
 ```
 
 where $`{384}`$ is the number of elements of the group, the index $`{i}`$ runs over the 20 conjugacy classes of $`{H(4)}`$,
