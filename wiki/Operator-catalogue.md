@@ -45,10 +45,15 @@ In a script, call it with `n_jobs > 1` under `if __name__ == "__main__":`, as us
 
 ## Without LaTeX
 
+The catalogue of the whole bundled database is attached to every
+[release](https://github.com/Tag-E/h4lat/releases): download the one of the
+[latest release](https://github.com/Tag-E/h4lat/releases/latest/download/operator_catalogue_SPVAT_nder0123.pdf), or
+the one of the release you use, since operator IDs can change between versions.
+
 If you have no LaTeX installation, the
 [`operator_catalogue.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_catalogue.ipynb) notebook
-shows the most relevant operators (V, A and T with one and two derivatives), and its `show_group` function lists any
-other group.
+also shows the most relevant operators (V, A and T with one and two derivatives), and its `show_group` function lists
+any other group.
 
 ## Exact kinematic factors
 

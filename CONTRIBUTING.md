@@ -120,4 +120,7 @@ is nothing to bump.
 
 Publishing the release runs `.github/workflows/publish.yml`. The workflow checks that the tag matches the
 version, builds the package, uploads it to [PyPI](https://pypi.org/project/h4lat/) and attaches it to the
-release. Zenodo archives the release and gives it a DOI.
+release. Zenodo archives the release and gives it a DOI. At the same time `.github/workflows/catalogue.yml` writes
+the PDF catalogue of the whole operator database (`h4lat-catalogue --nder 0 1 2 3`) with the code of the release and
+attaches it to the release, a few minutes later. To add or replace the catalogue of an existing release, run that
+workflow by hand: *Actions → catalogue → Run workflow*, with the tag of the release (e.g. `v0.3.0`).

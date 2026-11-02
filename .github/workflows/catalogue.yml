@@ -1,0 +1,58 @@
+# GitHub Actions workflow: attach the PDF catalogue of the operators to a GitHub release.
+# It runs when a release is published, next to publish.yml (which uploads the package to PyPI), and writes the
+# catalogue of the whole bundled operator database (S, P, V, A, T with 0 to 3 derivatives) with the code of the
+# release: h4lat-catalogue --nder 0 1 2 3, the file operator_catalogue_SPVAT_nder0123.pdf. It is a separate workflow so
+# that a problem with LaTeX can never stop the upload to PyPI.
+#
+# It can also be run by hand ("Run workflow" in the Actions tab) for a release that already exists, e.g. to add the
+# catalogue to an older release or to replace it: give the tag of the release, e.g. v0.3.0.
+name: catalogue
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of the release to attach the catalogue to, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  catalogue:
+    runs-on: ubuntu-latest
+    # The run takes about 5 minutes (installing LaTeX is the longest step): stop it if it hangs, instead of after
+    # the default 6 hours
+    timeout-minutes: 30
+    permissions:
+      contents: write # needed to add files to the release
+    env:
+      # The tag of the release that was just published, or the one given by hand
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      # The code of the release (the tag), so that the catalogue matches the package on PyPI
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # LaTeX for the PDF. The document made by pylatex needs fontenc, inputenc, textcomp and amsmath
+      # (texlive-latex-base), lmodern (lmodern) and lastpage (texlive-latex-extra), and is compiled with latexmk.
+      - name: Install LaTeX
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends texlive-latex-base texlive-latex-extra lmodern latexmk
+      # The package of the release with its optional dependencies (pylatex is needed for the catalogue)
+      - run: python -m pip install ".[full]"
+      # The whole database, with the kinematic factors computed on all the cores of the runner (-j); -q hides the
+      # progress bars, which only clutter the log. The default file name states the selection.
+      - name: Write the catalogue
+        run: h4lat-catalogue --nder 0 1 2 3 -j -q
+      # Attach the PDF to the release; --clobber replaces a catalogue that is already there (when run by hand)
+      - name: Upload the catalogue to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" operator_catalogue_SPVAT_nder0123.pdf --clobber --repo "$GITHUB_REPOSITORY"

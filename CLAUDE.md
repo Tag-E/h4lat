@@ -158,6 +158,9 @@ normalisation or K change.
 - **Releases:** bump the version (see above), turn "Unreleased" in `CHANGELOG.md` into the new version, then
   publish a GitHub release with tag `vX.Y.Z`. `.github/workflows/publish.yml` checks that the tag matches
   `pyproject.toml` and uploads to PyPI (Trusted Publishing), and Zenodo archives the release.
+  `.github/workflows/catalogue.yml` (on release, or by hand with a tag) installs LaTeX on the runner, runs
+  `h4lat-catalogue --nder 0 1 2 3` and attaches `operator_catalogue_SPVAT_nder0123.pdf` to the release; the wiki page
+  `Operator-catalogue` links to that file on the latest release, so keep its name.
   `.github/workflows/tests.yml` runs pre-commit and pytest (Python 3.11–3.14) on every push and PR.
   `.github/dependabot.yml` opens monthly grouped PRs for the GitHub Actions and the pre-commit hook revs, but not
   for the Python dependencies, which are unpinned (handling them: CONTRIBUTING.md, "Dependency updates").
