@@ -2048,8 +2048,9 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     """Convert the symbolic operator expression to a LaTeX-printable string.
 
     Monomials are sorted by their multi-index value and formatted using the
-    ``numerics_to_latex_conv`` dictionary so that CG coefficients are rendered
-    as proper fractions or square-root fractions rather than raw floats.  A
+    float → LaTeX lookup table returned by ``kinematic_data.latex_conversion_table()``
+    (built on first use), so that CG coefficients are rendered as proper fractions
+    or square-root fractions rather than raw floats.  A
     monomial without indices (an operator without Lorentz indices, such as ψ̄ψ)
     is written ``O^{X}``.
 
