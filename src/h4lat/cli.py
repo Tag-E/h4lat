@@ -1,3 +1,23 @@
+######################################################
+## cli.py  (h4lat package module)                   ##
+## created by Emilio Taggi - 2026/10/13             ##
+######################################################
+
+#########################################################################
+# This program is free software: you can redistribute it and/or modify  #
+# it under the terms of the GNU General Public License as published by  #
+# the Free Software Foundation, either version 3 of the License, or     #
+# (at your option) any later version.                                   #
+#                                                                       #
+# This program is distributed in the hope that it will be useful,       #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of        #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         #
+# GNU General Public License for more details.                          #
+#                                                                       #
+# You should have received a copy of the GNU General Public License     #
+# along with this program.  If not, see <http://www.gnu.org/licenses/>. #
+#########################################################################
+
 """Command-line tools installed with h4lat.
 
 h4lat-catalogue
@@ -95,7 +115,9 @@ def catalogue_main(argv=None) -> int:
         "--jobs",
         type=int,
         nargs="?",
-        const=0,
+        # nargs="?" makes the number optional: -j alone stores `const`, None here, which means
+        # all cores below. A number, including 0, is checked after parsing: it must be positive.
+        const=None,
         default=1,
         metavar="N",
         help="compute the kinematic factors on N processes (-j alone: all cores; default: 1)",
@@ -111,7 +133,8 @@ def catalogue_main(argv=None) -> int:
         parser.error(f"no operator database at {args.database}")
     if args.keys is not None and (args.X is not None or args.nder is not None):
         parser.error("select the operators either with --keys or with -X/--nder, not both")
-    if args.jobs < 0:
+    # None is -j alone (all cores); an explicit number must be at least 1, as n_jobs of operator_show.
+    if args.jobs is not None and args.jobs < 1:
         parser.error("--jobs must be a positive number of processes (or -j alone for all cores)")
 
     # Numbers of derivatives: integers, also accepted as comma-separated lists (--nder 1,2).
@@ -153,8 +176,8 @@ def catalogue_main(argv=None) -> int:
             X=_split_commas(args.X),
             nder=nder,
             keys=_split_commas(args.keys),
-            # -j alone (0) means all cores
-            n_jobs=args.jobs if args.jobs > 0 else (os.cpu_count() or 1),
+            # -j alone (None) means all cores; os.cpu_count() can return None, hence the fallback to 1
+            n_jobs=args.jobs if args.jobs is not None else (os.cpu_count() or 1),
         )
     except CompilerError as err:
         # the message also covers a missing compiler: "No LaTex compiler was found ..."

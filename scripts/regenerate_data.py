@@ -109,6 +109,10 @@ def operator_products(max_nder):
 
 
 def duration(seconds):
+    """Format a time span in *seconds* as 'HH:MM:SS' for the log.
+
+    time.gmtime turns the span into a date-time counted from the epoch, so spans of 24 h or more wrap around.
+    """
     return time.strftime("%H:%M:%S", time.gmtime(seconds))
 
 
@@ -145,6 +149,7 @@ def changed_files(old, new):
     """Relative paths of the files whose content differs between folders *old* and *new*."""
 
     def files(folder):
+        """{path relative to *folder*: path} of every file under *folder*, recursively ({} if it does not exist)."""
         return {p.relative_to(folder): p for p in folder.rglob("*") if p.is_file()} if folder.exists() else {}
 
     old_files, new_files = files(old), files(new)
@@ -281,6 +286,7 @@ def report_operator_changes(old_folder, new_folder):
         return ops
 
     def same_tensor(a, b):
+        """Whether tensors *a* and *b* have the same shape and entries (np.allclose with its default tolerances)."""
         return a.shape == b.shape and np.allclose(a, b)
 
     old, new = load(old_folder), load(new_folder)
@@ -316,6 +322,11 @@ def report_operator_changes(old_folder, new_folder):
 
     # --- by ID: what the IDs used in the code refer to now ---
     def status(i):
+        """What ID *i* holds now compared with before, as a short phrase for the log.
+
+        "added" or "removed" if only one database has the ID; "now <metadata> (was <metadata>)" if it now
+        belongs to another operator; otherwise "unchanged", "sign flipped" or "changed" for the tensor.
+        """
         if i not in old or i not in new:
             return "added" if i in new else "removed"
         (meta_old, a), (meta_new, b) = old[i], new[i]
@@ -371,6 +382,12 @@ def regenerate_operators(data, workdir, max_nder):
 
 
 def main(argv=None):
+    """Command-line entry point: run the requested stages and return the exit status.
+
+    *argv* is the list of arguments (default: those of the command line, sys.argv[1:]). The stages run in
+    the order h4 → cg → operators, whatever their order on the command line. Returns 0, or 1 if a CG
+    product failed; invalid arguments make argparse exit with status 2.
+    """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("stages", nargs="+", choices=STAGES + ("all",), help="what to regenerate")
     parser.add_argument(

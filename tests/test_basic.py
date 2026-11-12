@@ -326,6 +326,7 @@ def test_catalogue_keys_and_all_cores(monkeypatch, tmp_path):
         ["--keys", "V2", "--nder", "2"],
         ["--nder", "x"],  # not an integer
         ["-j", "-2"],  # negative number of processes
+        ["-j", "0"],  # zero processes (all cores is -j alone)
     ],
 )
 def test_catalogue_invalid_options(argv):

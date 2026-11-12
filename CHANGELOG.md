@@ -7,6 +7,11 @@ Changes marked **Breaking** can change the results or the code of existing users
 
 ## [Unreleased]
 
+### Changed
+
+- `h4lat-catalogue -j 0` is now an error: the number of processes must be positive, as for
+  `operator_show(n_jobs=…)`. It used to mean all cores, which was not documented; `-j` alone still uses all cores.
+
 ## [0.3.0] - 2026-11-02
 
 ### Added

@@ -215,7 +215,8 @@ def latex_conversion_table() -> dict:
     # numpy values as before (np.sqrt(den), is_square(den)), so the table is
     # identical, keys and insertion order included.
     sqrt_den = {den: np.sqrt(den) for den in range(2, max_int + 1)}
-    den_is_not_square = {den: is_square(den) is False for den in range(2, max_int + 1)}
+    # is_square returns a plain bool, so `not` is its exact negation.
+    den_is_not_square = {den: not is_square(den) for den in range(2, max_int + 1)}
 
     for num in range(1, max_int + 1):
         for den in range(2, max_int + 1):
