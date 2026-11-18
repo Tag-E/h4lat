@@ -288,6 +288,15 @@ def test_catalogue_defaults(monkeypatch, tmp_path):
     assert kwargs["verbose"] is True
     assert kwargs["X"] is None and kwargs["nder"] is None and kwargs["keys"] is None
     assert kwargs["n_jobs"] == 1
+    # no group: H(4), or the group of the operators of --database
+    assert kwargs["group"] is None
+
+
+@pytest.mark.parametrize("value", ["honeycomb", "W(F4)", "wf4"])
+def test_catalogue_group_option(monkeypatch, tmp_path, value):
+    """--group selects the lattice group; every alias of get_group is accepted and passed on as the group name."""
+    monkeypatch.chdir(tmp_path)
+    assert _run_catalogue(monkeypatch, ["--group", value])["group"] == "honeycomb"
 
 
 def test_catalogue_options(monkeypatch, tmp_path):
@@ -327,6 +336,7 @@ def test_catalogue_keys_and_all_cores(monkeypatch, tmp_path):
         ["--nder", "x"],  # not an integer
         ["-j", "-2"],  # negative number of processes
         ["-j", "0"],  # zero processes (all cores is -j alone)
+        ["--group", "cubic"],  # not a lattice group of h4lat
     ],
 )
 def test_catalogue_invalid_options(argv):
@@ -385,6 +395,16 @@ def test_catalogue_selection_default():
 )
 def test_catalogue_selection_titles_and_names(kwargs, title, name):
     assert _catalogue_selection(**kwargs)[1:] == (title, name)
+    # the same for H(4) when it is given explicitly
+    assert _catalogue_selection(**kwargs, group="H4")[1:] == (title, name)
+
+
+def test_catalogue_selection_names_the_honeycomb_group():
+    """For the honeycomb group the title names it (in ASCII, for pdflatex) and the file name holds it."""
+    _, title, name = _catalogue_selection(group="honeycomb")
+    assert title == "Available Operators of the honeycomb group W(F4): X = S, P, V, A, T with 0, 1, 2 derivatives"
+    assert name == "operator_catalogue_honeycomb_SPVAT_nder012"
+    assert _catalogue_selection(keys="V2 A3", group="honeycomb")[2] == "operator_catalogue_honeycomb_V2_A3"
 
 
 @pytest.mark.parametrize(
@@ -606,9 +626,10 @@ def test_get_OperatorList_operator_attributes():
         assert op.nder >= 0
 
 
-def test_bundled_operators_have_definite_c_parity():
+@pytest.mark.parametrize("group", ["H4", "honeycomb"])
+def test_bundled_operators_have_definite_c_parity(group):
     """Copies of an irrep are chosen with definite C-parity, so no bundled operator is 'mixed'."""
-    mixed = [op.id for op in get_OperatorList() if op.C not in (1, -1)]
+    mixed = [op.id for op in get_OperatorList(group=group) if op.C not in (1, -1)]
     assert mixed == [], f"operators without definite C-parity: {mixed}"
 
 
@@ -969,9 +990,10 @@ def test_get_OperatorDict_in_public_api():
 # ---------------------------------------------------------------------------
 
 
-def test_bundled_operator_database_covers_three_derivatives():
+@pytest.mark.parametrize("group", ["H4", "honeycomb"])
+def test_bundled_operator_database_covers_three_derivatives(group):
     """S, P, V, A and T operators with 0 to 3 derivatives, one per basis vector of each product, IDs 1-1360."""
-    d = get_OperatorDict()
+    d = get_OperatorDict(group=group)
     counts = {key: sum(len(ops) for ops in group.values()) for key, group in d.items()}
     # keys (n, X), with n = nder for S/P, nder + 1 for V/A, nder + 2 for T, in database order
     # fmt: off
@@ -986,9 +1008,10 @@ def test_bundled_operator_database_covers_three_derivatives():
     assert ids == list(range(1, 1361))
 
 
-def test_bundled_operator_ids_are_ordered_by_derivatives_then_dirac_structure():
-    """IDs run over the number of derivatives 0, 1, 2, 3 and, for each, over X = S, P, V, A, T."""
-    ops = get_OperatorList()
+@pytest.mark.parametrize("group", ["H4", "honeycomb"])
+def test_bundled_operator_ids_are_ordered_by_derivatives_then_dirac_structure(group):
+    """IDs run over the number of derivatives 0, 1, 2, 3 and, for each, over X = S, P, V, A, T (in both groups)."""
+    ops = get_OperatorList(group=group)
     keys = [(op.nder, "SPVAT".index(op.X)) for op in ops]
     assert keys == sorted(keys)
     # first ID of each group: 16 · 4^nder operators per number of derivatives
@@ -1081,6 +1104,19 @@ def test_make_operator_database_reproduces_the_bundled_database(tmp_path):
     for max_nder in (-1, 1.5, True):
         with pytest.raises(ValueError, match="max_nder"):
             make_operator_database(str(tmp_path / "other"), max_nder=max_nder)
+
+
+def test_make_operator_database_reproduces_the_bundled_honeycomb_database(tmp_path):
+    """The same for the honeycomb group: the file names end in _honeycomb, and the operators are those bundled."""
+    folder = tmp_path / "operators"
+    make_operator_database(str(folder), max_nder=1, group="honeycomb")
+    bundled = Path(h4lat.get_group("honeycomb").operator_database_folder)
+    bundled = {f.name: f for f in (Path(OPERATOR_DATABASE).parent / bundled).glob("*.npy")}
+    written = sorted(folder.glob("*.npy"), key=lambda f: int(f.name.split("_")[1]))
+    assert [int(f.name.split("_")[1]) for f in written] == list(range(1, 81))
+    for f in written:
+        assert f.name.endswith("_honeycomb.npy") and f.name in bundled
+        assert np.array_equal(np.load(f), np.load(bundled[f.name])), f.name
 
 
 def test_cg_remapping():

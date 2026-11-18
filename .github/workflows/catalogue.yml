@@ -1,8 +1,9 @@
-# GitHub Actions workflow: attach the PDF catalogue of the operators to a GitHub release.
+# GitHub Actions workflow: attach the PDF catalogues of the operators to a GitHub release.
 # It runs when a release is published, next to publish.yml (which uploads the package to PyPI), and writes the
 # catalogue of the whole bundled operator database (S, P, V, A, T with 0 to 3 derivatives) with the code of the
-# release: h4lat-catalogue --nder 0 1 2 3, the file operator_catalogue_SPVAT_nder0123.pdf. It is a separate workflow so
-# that a problem with LaTeX can never stop the upload to PyPI.
+# release: h4lat-catalogue --nder 0 1 2 3, the file operator_catalogue_SPVAT_nder0123.pdf, and the same for the
+# 16-cell honeycomb group, operator_catalogue_honeycomb_SPVAT_nder0123.pdf (for the releases that have that group).
+# It is a separate workflow so that a problem with LaTeX can never stop the upload to PyPI.
 #
 # It can also be run by hand ("Run workflow" in the Actions tab) for a release that already exists, e.g. to add the
 # catalogue to an older release or to replace it: give the tag of the release, e.g. v0.3.0.
@@ -23,9 +24,9 @@ permissions:
 jobs:
   catalogue:
     runs-on: ubuntu-latest
-    # The run takes about 5 minutes (installing LaTeX is the longest step): stop it if it hangs, instead of after
-    # the default 6 hours
-    timeout-minutes: 30
+    # The run takes about 10 minutes (installing LaTeX and the two catalogues): stop it if it hangs, instead of
+    # after the default 6 hours
+    timeout-minutes: 45
     permissions:
       contents: write # needed to add files to the release
     env:
@@ -51,8 +52,20 @@ jobs:
       # progress bars, which only clutter the log. The default file name states the selection.
       - name: Write the catalogue
         run: h4lat-catalogue --nder 0 1 2 3 -j -q
-      # Attach the PDF to the release; --clobber replaces a catalogue that is already there (when run by hand)
-      - name: Upload the catalogue to the release
+      # The same for the 16-cell honeycomb group. A release older than the honeycomb group (run by hand) has no
+      # option --group: then there is no second catalogue.
+      - name: Write the catalogue of the honeycomb group
+        run: |
+          if h4lat-catalogue --help | grep -q -- "--group"; then
+            h4lat-catalogue --group honeycomb --nder 0 1 2 3 -j -q
+          fi
+      # Attach the PDFs to the release; --clobber replaces a catalogue that is already there (when run by hand)
+      - name: Upload the catalogues to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" operator_catalogue_SPVAT_nder0123.pdf --clobber --repo "$GITHUB_REPOSITORY"
+        run: |
+          files=(operator_catalogue_SPVAT_nder0123.pdf)
+          if [ -f operator_catalogue_honeycomb_SPVAT_nder0123.pdf ]; then
+            files+=(operator_catalogue_honeycomb_SPVAT_nder0123.pdf)
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"

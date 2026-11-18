@@ -1,12 +1,19 @@
 """
-h4lat — Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4).
+h4lat — Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)
+and for the group W(F₄) of the 16-cell honeycomb lattice.
+
+The group is chosen with the argument ``group`` of the functions that depend on it: by
+default H(4), with ``group='honeycomb'`` W(F₄) (see ``get_group``).  The module-level
+constants (``rep_label_list``, ``char_table``, …) are those of H(4); those of any group are
+attributes of ``get_group(group)``.
 
 Quick start
 -----------
 >>> from h4lat import cg_calc, get_multiplicities
->>> muls = get_multiplicities((4, 1), (4, 1))   # returns a 20-element list
+>>> muls = get_multiplicities((4, 1), (4, 1))   # returns a 20-element list (one entry per H(4) irrep)
 >>> cg = cg_calc((4, 1), (4, 1))                # loads bundled CG database
 >>> cg.cg_dict                                  # {irrep_index: [cgmat, ...], ...}
+>>> get_multiplicities((4, 1), (4, 1), group='honeycomb')   # 25 entries, one per W(F₄) irrep
 """
 
 import importlib.metadata as _metadata
@@ -31,6 +38,7 @@ from .cg_calculator import (
     rep_dim_list,
     rep_label_list,
 )
+from .groups import AVAILABLE_GROUPS, LatticeGroup, get_group
 from .kinematic_data import (
     Gamma_pol,
     Gamma_pol_list,
@@ -84,6 +92,10 @@ __all__ = [
     "latex_print_multiplicities",
     "CGmat_from_block",
     "print_CGmat",
+    # Lattice groups (H(4) and the 16-cell honeycomb group W(F₄))
+    "get_group",
+    "LatticeGroup",
+    "AVAILABLE_GROUPS",
     # H(4) group constants
     "n_rep",
     "rep_dim_list",
@@ -126,7 +138,7 @@ __all__ = [
     "read_operator",
     "operator_list_to_h5",
     "h5_to_operator_list",
-    # bundled data paths
+    # bundled data paths (H(4); the folders of any group: get_group(group).operator_database_folder)
     "OPERATOR_DATABASE",
     # Kinematic / polarisation data
     "Gamma_pol",

@@ -1,5 +1,6 @@
-*Theory, part 3 of 3.* Previous: [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) ·
-[Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients)
+*Theory, part 3 of 4.* Previous: [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) ·
+[Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients) ·
+Next: [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)
 
 ## Operators and their irreps
 

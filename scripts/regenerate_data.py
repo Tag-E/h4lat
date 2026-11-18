@@ -1,23 +1,29 @@
 """Regenerate the data bundled with h4lat (src/h4lat/data/).
 
-The bundled data come in three stages, each derived from the previous one:
+The data of each lattice group (--group: H4, the default, or honeycomb) come in three
+stages, each derived from the previous one:
 
-  h4         matrices of the 384 elements of H(4) in its 20 irreps, built
-             from the generators in cg_calculator.py               -> h4_ele/
-  cg         Clebsch-Gordan coefficients of the bundled products    -> cg_database/
-  operators  lattice operators built from the CG coefficients       -> operator_database/
+  elements   matrices of all the group elements in every irrep, built by the code:
+             H(4) (384 elements, 20 irreps) from the generators in cg_calculator.py,
+             W(F4) (1152 elements, 25 irreps) by the module honeycomb.py
+                                                     -> h4_ele/        honeycomb_ele/
+  cg         Clebsch-Gordan coefficients of the bundled products
+                                                     -> cg_database/   cg_database_honeycomb/
+  operators  lattice operators built from the CG coefficients
+                                                     -> operator_database/  operator_database_honeycomb/
 
-Each stage is computed in a work directory; the files whose content changed (beyond
-floating-point noise) are then copied over the bundled data, which git tracks: review
-the result with `git status src/h4lat/data` and throw it away with
-`git checkout -- src/h4lat/data`.  CG coefficients are always computed from the
-generators in the code (force_h4gen), never from stale bundled matrices.  With
---from-raw, the cg stage instead only re-applies CGmat_from_block to the bundled raw
-blocks (`{product}_raw/`), which takes seconds: use it when CGmat_from_block changed
-but the generators did not.  Raw blocks are bundled only for products of up to
-MAX_RAW_IRREPS irreps, i.e. for the operators with up to two derivatives: those of larger
-products take tens of MB and long to load, and computing such a product takes about a
-minute, so --from-raw recomputes them instead.
+(The stage `h4` is the older name of `elements`.)  Each stage is computed in a work
+directory; the files whose content changed (beyond floating-point noise) are then copied
+over the bundled data, which git tracks: review the result with `git status src/h4lat/data`
+and throw it away with `git checkout -- src/h4lat/data`.  CG coefficients are always
+computed from matrices built by the code (force_group_gen), never from stale bundled
+matrices.  With --from-raw, the cg stage instead only re-applies CGmat_from_block to the
+bundled raw blocks (`{product}_raw/`), which takes seconds: use it when CGmat_from_block
+changed but the generators did not.  Raw blocks are bundled only for the H(4) products of
+up to MAX_RAW_IRREPS["H4"] irreps, i.e. for the operators with up to two derivatives: those
+of larger products take tens of MB and long to load, and computing such a product takes
+about a minute, so --from-raw recomputes them instead.  For the honeycomb group no raw
+blocks are bundled (MAX_RAW_IRREPS["honeycomb"] = 0) and --from-raw is not available.
 
 The operator database holds the operators of every Dirac structure (S, P, V, A, T) with
 0 to --max-nder derivatives, so it needs the products irrep(X) ⊗ (4,1)^k for k = 0 (the
@@ -26,7 +32,8 @@ irrep of X alone), 1, ..., max_nder.
 Examples (from the repository root, with h4lat installed with `pip install -e .`):
 
   python scripts/regenerate_data.py all --jobs 6
-  python scripts/regenerate_data.py h4
+  python scripts/regenerate_data.py all --group honeycomb --jobs 6
+  python scripts/regenerate_data.py elements
   python scripts/regenerate_data.py cg --products "(6,1),(4,1)" "(4,1),(4,1)"
   python scripts/regenerate_data.py cg --products "(1,4)" "(1,4),(4,1)"   # a single irrep: no derivatives
   python scripts/regenerate_data.py cg --from-raw
@@ -54,9 +61,11 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
-STAGES = ("h4", "cg", "operators")
+STAGES = ("elements", "cg", "operators")
+STAGE_ALIASES = {"h4": "elements"}  # older stage names
 NOISE = 1e-10  # smaller differences between old and new data are floating-point noise, not changes
-MAX_RAW_IRREPS = 3  # raw CG blocks are bundled only for products of up to this many irreps
+# raw CG blocks are bundled only for products of up to this many irreps, for each group
+MAX_RAW_IRREPS = {"H4": 3, "honeycomb": 0}
 
 log = logging.getLogger("regenerate_data")
 
@@ -91,9 +100,22 @@ def parse_product(text):
     return product
 
 
-def bundled_products(data):
-    """Tensor products in the CG database of *data*."""
-    names = sorted(p.name for p in (data / "cg_database").iterdir() if p.is_dir() and p.name.startswith("("))
+def parse_group(text):
+    """Parse the command-line group, e.g. 'honeycomb', into its h4lat LatticeGroup object."""
+    from h4lat import get_group
+
+    try:
+        return get_group(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
+def bundled_products(data, group):
+    """Tensor products in the CG database of *group* in *data* (none if the database does not exist yet)."""
+    folder = data / group.cg_database_folder
+    if not folder.is_dir():
+        return []
+    names = sorted(p.name for p in folder.iterdir() if p.is_dir() and p.name.startswith("("))
     return [
         tuple((int(a), int(b)) for a, b in re.findall(r"\((\d+), (\d+)\)", name))
         for name in names
@@ -187,23 +209,24 @@ def install(new, target):
 ######################## Stages #########################################
 
 
-def regenerate_h4(data, workdir):
-    """Build the H(4) matrices from the generators and install them."""
-    from h4lat import cg_calc
+def regenerate_elements(data, workdir, group):
+    """Build the matrices of all the elements of *group* in every irrep with the code, and install them."""
+    from h4lat.cg_calculator import _generate_group_matrices, _save_group_matrices
 
-    log.info("h4: building the H(4) matrices from the generators")
-    shutil.rmtree(workdir / "h4_ele", ignore_errors=True)
-    with contextlib.chdir(workdir):
-        # force_h4gen writes the matrices to ./h4_ele; the (4,1)x(4,1) CGs are only loaded
-        cg_calc((4, 1), (4, 1), force_h4gen=True, verbose=False)
-    install(workdir / "h4_ele", data / "h4_ele")
+    log.info("elements: building the %s matrices of all the elements in every irrep", group.title)
+    new = workdir / group.ele_folder
+    shutil.rmtree(new, ignore_errors=True)
+    # the same functions that cg_calc(force_group_gen=True) uses, without computing any CG coefficient
+    _save_group_matrices(group, str(new), _generate_group_matrices(group))
+    install(new, data / group.ele_folder)
 
 
-def compute_product(product, cg_database, scratch, verbose, raw_source=None):
-    """Compute the CG coefficients of one product into *cg_database* (runs in a worker process).
+def compute_product(product, cg_database, scratch, verbose, group, raw_source=None):
+    """Compute the CG coefficients of one product of irreps of *group* into *cg_database* (runs in a worker process).
 
     With *raw_source* (a CG database), the raw blocks of the product are taken from there
-    and only CGmat_from_block is re-applied to them.
+    and only CGmat_from_block is re-applied to them.  *group* (a LatticeGroup) is pickled by name
+    and is the same object in the worker.
     """
     from h4lat import cg_calc
 
@@ -217,27 +240,36 @@ def compute_product(product, cg_database, scratch, verbose, raw_source=None):
             shutil.copytree(raw_source / (name + "_raw"), cg_database / (name + "_raw"))
             (cg_database / name).mkdir(parents=True)
             # prescription_changed: the final blocks are rebuilt from the raw ones
-            cg_calc(*product, cgdatabase=str(cg_database), prescription_changed=True, verbose=verbose)
+            cg_calc(*product, group=group, cgdatabase=str(cg_database), prescription_changed=True, verbose=verbose)
         else:
-            # force_h4gen: matrices from the generators in the code, written to the scratch ./h4_ele
-            cg_calc(*product, cgdatabase=str(cg_database), force_computation=True, force_h4gen=True, verbose=verbose)
+            # force_group_gen: matrices built by the code, written to the scratch ./h4_ele or ./honeycomb_ele.
+            # The raw blocks are saved with the default of cg_calc: for H(4) only.
+            cg_calc(
+                *product,
+                group=group,
+                cgdatabase=str(cg_database),
+                force_computation=True,
+                force_group_gen=True,
+                verbose=verbose,
+            )
     shutil.rmtree(scratch)
     return time.time() - start
 
 
-def regenerate_cg(data, workdir, products, jobs, from_raw=False):
-    """Recompute the CGs of *products*, installing each one as soon as it is done.
+def regenerate_cg(data, workdir, products, jobs, group, from_raw=False):
+    """Recompute the CGs of *products* of irreps of *group*, installing each one as soon as it is done.
 
     With *from_raw*, only the final blocks are rebuilt, from the bundled raw blocks; the
     products without bundled raw blocks (more than MAX_RAW_IRREPS irreps) are recomputed.
     Returns the products that failed.
     """
-    raw_source = data / "cg_database" if from_raw else None
+    bundled = data / group.cg_database_folder
+    raw_source = bundled if from_raw else None
     if from_raw:
         missing = [p for p in products if not (raw_source / (product_name(p) + "_raw")).is_dir()]
         if missing:
             log.info("cg: no bundled raw blocks for %s: recomputed", ", ".join(product_name(p) for p in missing))
-    cg_database = workdir / "cg_database"
+    cg_database = workdir / group.cg_database_folder
     if jobs > 1:
         os.environ["TQDM_DISABLE"] = "1"  # no interleaved progress bars: tqdm reads it when a worker imports it
 
@@ -250,7 +282,7 @@ def regenerate_cg(data, workdir, products, jobs, from_raw=False):
             # with one job, cg_calc output and progress bar are shown (otherwise they would interleave)
             scratch = workdir / "scratch" / product_name(p)
             source = raw_source if from_raw and (raw_source / (product_name(p) + "_raw")).is_dir() else None
-            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1, source)] = p
+            futures[pool.submit(compute_product, p, cg_database, scratch, jobs == 1, group, source)] = p
             log.info("cg: queued %s", product_name(p))
         for future in as_completed(futures):
             p = futures[future]
@@ -262,18 +294,19 @@ def regenerate_cg(data, workdir, products, jobs, from_raw=False):
                 continue
             log.info("cg: %s computed in %s", product_name(p), duration(elapsed))
             # the raw blocks of products of more than MAX_RAW_IRREPS irreps are not bundled
-            for suffix in ("", "_raw") if len(p) <= MAX_RAW_IRREPS else ("",):
-                install(cg_database / (product_name(p) + suffix), data / "cg_database" / (product_name(p) + suffix))
+            for suffix in ("", "_raw") if len(p) <= MAX_RAW_IRREPS[group.name] else ("",):
+                install(cg_database / (product_name(p) + suffix), bundled / (product_name(p) + suffix))
     return failed
 
 
-def report_operator_changes(old_folder, new_folder):
+def report_operator_changes(old_folder, new_folder, group):
     """Log how the operator database changed, in particular at the IDs used in get_op_selection and get_paper_operators.
 
     The operators of the two databases are matched by their metadata (number of indices, Dirac
     structure, irrep, copy and component, read from the file name), which identifies an operator
     also when its ID changes.  The log states the operators added and removed, those whose tensor
-    changed, and how the IDs of the others moved.
+    changed, and how the IDs of the others moved.  The IDs hard-coded in get_op_selection and
+    get_paper_operators refer to the H(4) database: they are checked only for *group* H(4).
     """
     from h4lat import get_op_selection, get_paper_operators
 
@@ -338,7 +371,7 @@ def report_operator_changes(old_folder, new_folder):
 
     statuses = {i: status(i) for i in sorted(old.keys() | new.keys())}
 
-    for function in (get_op_selection, get_paper_operators):
+    for function in (get_op_selection, get_paper_operators) if group.name == "H4" else ():
         source = inspect.getsource(function)
         used = sorted({int(i) for i in re.findall(r"Operator_from_database\((\d+)\)", source)})
         affected = [i for i in used if statuses.get(i) != "unchanged"]
@@ -358,24 +391,25 @@ def report_operator_changes(old_folder, new_folder):
             )
 
 
-def regenerate_operators(data, workdir, max_nder):
-    """Rebuild the operator database from the bundled CGs, report changed IDs, install."""
+def regenerate_operators(data, workdir, max_nder, group):
+    """Rebuild the operator database of *group* from the bundled CGs, report changed IDs, install."""
     from h4lat import make_operator_database
 
-    missing = [p for p in operator_products(max_nder) if not (data / "cg_database" / product_name(p)).is_dir()]
+    cg_database = data / group.cg_database_folder
+    missing = [p for p in operator_products(max_nder) if not (cg_database / product_name(p)).is_dir()]
     if missing:
         products = " ".join(f'"{",".join(str(irrep).replace(" ", "") for irrep in p)}"' for p in missing)
         raise SystemExit(
             f"operators: CG products missing for max_nder = {max_nder}; compute them first with\n"
-            f"  python scripts/regenerate_data.py cg --products {products}"
+            f"  python scripts/regenerate_data.py cg --group {group.name} --products {products}"
         )
 
-    log.info("operators: building the operator database up to max_nder = %d derivatives", max_nder)
-    new = workdir / "operator_database"
+    log.info("operators: building the %s operator database up to max_nder = %d derivatives", group.title, max_nder)
+    new = workdir / group.operator_database_folder
     shutil.rmtree(new, ignore_errors=True)
-    make_operator_database(str(new), max_nder=max_nder, verbose=True, cg_database=str(data / "cg_database"))
-    report_operator_changes(data / "operator_database", new)
-    install(new, data / "operator_database")
+    make_operator_database(str(new), max_nder=max_nder, verbose=True, cg_database=str(cg_database), group=group)
+    report_operator_changes(data / group.operator_database_folder, new, group)
+    install(new, data / group.operator_database_folder)
 
 
 ######################## Command line ###################################
@@ -385,17 +419,26 @@ def main(argv=None):
     """Command-line entry point: run the requested stages and return the exit status.
 
     *argv* is the list of arguments (default: those of the command line, sys.argv[1:]). The stages run in
-    the order h4 → cg → operators, whatever their order on the command line. Returns 0, or 1 if a CG
-    product failed; invalid arguments make argparse exit with status 2.
+    the order elements → cg → operators, whatever their order on the command line. Returns 0, or 1 if a
+    CG product failed; invalid arguments make argparse exit with status 2.
     """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("stages", nargs="+", choices=STAGES + ("all",), help="what to regenerate")
+    parser.add_argument(
+        "stages", nargs="+", choices=STAGES + tuple(STAGE_ALIASES) + ("all",), help="what to regenerate"
+    )
+    parser.add_argument(
+        "--group",
+        type=parse_group,
+        default="H4",
+        help="lattice group whose data are regenerated: H4 (default) or honeycomb",
+    )
     parser.add_argument(
         "--products",
         nargs="+",
         type=parse_product,
         metavar="PRODUCT",
-        help='CG products for the cg stage, e.g. "(6,1),(4,1)" (default: all bundled products)',
+        help='CG products for the cg stage, e.g. "(6,1),(4,1)" (default: all bundled products of the group, '
+        "or, if there are none yet, those of the operator database up to --max-nder derivatives)",
     )
     parser.add_argument(
         "--from-raw",
@@ -424,6 +467,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.jobs < 1 or args.max_nder < 0:
         parser.error("--jobs must be at least 1 and --max-nder at least 0")
+    group = args.group
+    if args.from_raw and MAX_RAW_IRREPS[group.name] == 0:
+        parser.error(f"--from-raw: no raw CG blocks are bundled for the {group.name} group")
+    stages = {STAGE_ALIASES.get(stage, stage) for stage in args.stages}
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 
@@ -433,30 +480,31 @@ def main(argv=None):
     if imported_from != REPO / "src" / "h4lat":
         parser.error(f"h4lat is imported from {imported_from}, not from this repository: run `pip install -e .`")
     data = args.data_dir.resolve()
-    products = args.products or bundled_products(data)
-    unknown = sorted({irrep for p in products for irrep in p if irrep not in h4lat.rep_label_list})
+    products = args.products or bundled_products(data, group) or operator_products(args.max_nder)
+    unknown = sorted({irrep for p in products for irrep in p if irrep not in group.irrep_index})
     if unknown:
-        parser.error(f"unknown irreps: {unknown}")
+        parser.error(f"unknown irreps of the {group.name} group: {unknown}")
     workdir = args.workdir.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
 
     start = time.time()
-    if "h4" in args.stages or "all" in args.stages:
-        regenerate_h4(data, workdir)
-    if "cg" in args.stages or "all" in args.stages:
-        failed = regenerate_cg(data, workdir, products, args.jobs, from_raw=args.from_raw)
+    if "elements" in stages or "all" in stages:
+        regenerate_elements(data, workdir, group)
+    if "cg" in stages or "all" in stages:
+        failed = regenerate_cg(data, workdir, products, args.jobs, group, from_raw=args.from_raw)
         if failed:
             log.error("cg: failed: %s; rerun them with --products", ", ".join(product_name(p) for p in failed))
             return 1
-    if "operators" in args.stages or "all" in args.stages:
-        regenerate_operators(data, workdir, args.max_nder)
+    if "operators" in stages or "all" in stages:
+        regenerate_operators(data, workdir, args.max_nder, group)
 
     log.info("done in %s", duration(time.time() - start))
     log.info("next: python -m pytest tests/test_cg_correctness.py, the full suite, then commit %s", data)
-    if "operators" in args.stages or "all" in args.stages:
+    if "operators" in stages or "all" in stages:
         # The default catalogue holds only the operators with up to two derivatives.
         nders = " ".join(str(d) for d in range(args.max_nder + 1))
-        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue --nder %s -j", nders)
+        option = "" if group.name == "H4" else f" --group {group.name}"
+        log.info("then refresh the operator catalogue PDF with: h4lat-catalogue%s --nder %s -j", option, nders)
     return 0
 
 

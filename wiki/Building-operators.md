@@ -39,6 +39,7 @@ The arguments of `Operator` are:
 | `id` | an identifier, e.g. the operator ID in the database |
 | `irrep`, `block`, `index_block` | the irrep label, the copy of the irrep (from 1) and the column of the CG block (from 1) |
 | `gamma_pol_index` | the polarisation projector of the kinematic factor (0–5, default 0) |
+| `group` | the lattice group of the irrep: `'H4'` (default) or `'honeycomb'` (see [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)); the operator keeps it in `op.group`, and an irrep that the group does not have is refused |
 
 ## What an operator contains
 
@@ -90,8 +91,9 @@ op = Operator_from_database(26) - Operator_from_database(27)    # vector operato
 print(op.irrep, op.C)
 ```
 
-The operands must have the same Dirac structure, number of indices and polarisation projector. The sum of operators
-of different irreps (or copies) has `irrep` (or `block`) set to `None`, and a sum has no `id`. The notebook
+The operands must have the same Dirac structure, number of indices, polarisation projector and group (an irrep label
+means different irreps in different groups). The sum of operators of different irreps (or copies) has `irrep` (or
+`block`) set to `None`, and a sum has no `id`. The notebook
 [`operator_algebra.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_algebra.ipynb) shows the
 details.
 

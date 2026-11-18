@@ -7,10 +7,45 @@ Changes marked **Breaking** can change the results or the code of existing users
 
 ## [Unreleased]
 
+### Added
+
+- The symmetry group W(F₄) of the 16-cell honeycomb lattice (order 1152, 25 irreps ϱ^(k)_l labelled as in Katz and
+  Nogradi, arXiv:2611.21543), next to H(4). Every function that depends on the group takes the argument `group`:
+  `None` or `'H4'` (the default, so existing code is unchanged) or `'honeycomb'`. This covers `cg_calc`,
+  `get_multiplicities`, `latex_print_multiplicities`, `Operator`, `make_operator_database`, the database loaders
+  (`get_OperatorList`, `get_OperatorDict`, `OperatorList_from_database`, `OperatorDict_from_database`,
+  `Operator_from_database`), `operator_show`, `decomposition_analysis` and `irrep_count_table`.
+- `get_group`, `LatticeGroup` and `AVAILABLE_GROUPS` (module `h4lat.groups`): the irrep labels, character table and
+  data folders of each group. The module `h4lat.honeycomb` builds the 1152 elements (h4lat's H(4) and its two
+  cosets under the triality rotation of the paper) and the matrices of the 25 irreps, without external programs.
+- Bundled data of the honeycomb group: the matrices of its elements (`honeycomb_ele/`), the CG coefficients of the
+  20 operator products (`cg_database_honeycomb/`, without raw blocks) and a database of 1360 operators sorted by its
+  irreps (`operator_database_honeycomb/`), with the same ID ranges per Dirac structure and number of derivatives.
+- `Operator.group` (`'H4'` or `'honeycomb'`). It is stored in the file names of the honeycomb operators (ending in
+  `_honeycomb`) and in HDF5 files (attribute `symmetry_group`); files without it are read as H(4) operators.
+- `h4lat-catalogue --group honeycomb` and `scripts/regenerate_data.py --group honeycomb`; the release workflow also
+  attaches `operator_catalogue_honeycomb_SPVAT_nder0123.pdf`.
+- `cg_calc(save_raw=…)`: whether to build and save the raw symbolic blocks (default: True for H(4), False for the
+  honeycomb group).
+- Wiki page "The 16-cell honeycomb group", and the notebook `examples/honeycomb.ipynb`.
+
 ### Changed
 
 - `h4lat-catalogue -j 0` is now an error: the number of processes must be positive, as for
   `operator_show(n_jobs=…)`. It used to mean all cores, which was not documented; `-j` alone still uses all cores.
+- `cg_calc` extracts the CG blocks directly from the numerical coefficients of the projection, without the symbolic
+  raw blocks, with the same result to the last bit. Without the raw blocks (`save_raw=False`) the H(4) product
+  (6,1) ⊗ (4,1)³ takes about 15 s on 12 cores (35 s serially) instead of about 80 s.
+- `cg_calc(force_h4gen=…)` is now called `force_group_gen` (it regenerates the matrices of either group);
+  `force_h4gen` still works, with a `DeprecationWarning`. `cg_calc.h4_mat` is now also `cg_calc.group_mat`: one
+  read-only array of shape (number of elements, d, d) per irrep (`h4_mat[ir][e]` still is the matrix of element `e`).
+- An irrep that the group does not have (in `cg_calc`, `get_multiplicities`, `Operator`) raises a `ValueError`
+  that lists the irreps of the group, instead of a `KeyError`.
+
+### Fixed
+
+- `irrep_count_table(split=True)` no longer drops the last irrep when the number of irreps is odd (as for the 25
+  irreps of the honeycomb group).
 
 ## [0.3.0] - 2026-11-02
 

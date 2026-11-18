@@ -7,7 +7,7 @@
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](https://github.com/Tag-E/h4lat/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23598681.svg)](https://doi.org/10.5281/zenodo.23598681)
 
-**Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)**
+**Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4) and the 16-cell honeycomb group W(F₄)**
 
 Lattice QCD calculations of nucleon structure (moments of parton distribution functions, form factors) need
 operators that transform irreducibly under the hypercubic group **H(4)**, the symmetry group of a four-dimensional
@@ -23,6 +23,9 @@ coefficients of H(4) and builds these operators:
   polarisation projectors), its **C-parity**, trace condition and index symmetry.
 * The operators used in **published works**, a **PDF catalogue** of the operators, linear combinations of operators
   and HDF5 storage.
+* The same for the **16-cell honeycomb lattice**, whose symmetry group W(F₄) (order 1152, 25 irreps) contains H(4)
+  and protects more operators from mixing ([Katz and Nogradi 2026](https://arxiv.org/abs/2611.21543)): select it with
+  `group="honeycomb"`.
 
 ---
 
@@ -34,7 +37,7 @@ The documentation is in the **[wiki](https://github.com/Tag-E/h4lat/wiki)**:
 |---|---|
 | **Getting started** | [Installation](https://github.com/Tag-E/h4lat/wiki/Installation) (optional features, install from GitHub, development install) |
 | **User guide** | [Computing Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Computing-Clebsch-Gordan-coefficients) · [Building operators](https://github.com/Tag-E/h4lat/wiki/Building-operators) · [Operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database) (operator IDs) · [Operator catalogue (PDF)](https://github.com/Tag-E/h4lat/wiki/Operator-catalogue) · [Operators from the literature](https://github.com/Tag-E/h4lat/wiki/Operators-from-the-literature) · [Saving and loading operators](https://github.com/Tag-E/h4lat/wiki/Saving-and-loading-operators) · [API overview](https://github.com/Tag-E/h4lat/wiki/API-overview) |
-| **Theory** | [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) · [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients) · [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators) · [References](https://github.com/Tag-E/h4lat/wiki/References) |
+| **Theory** | [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) · [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients) · [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators) · [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group) · [References](https://github.com/Tag-E/h4lat/wiki/References) |
 
 Every function and class also has a detailed docstring (`help(h4lat.cg_calc)`).
 
@@ -80,6 +83,10 @@ print(op.evaluate_K(m_value=0.939, E_value=1.0, p1_value=0.0, p2_value=0.0, p3_v
 
 # The operators of a published work, selected by INSPIRE texkey or DOI
 paper_ops = get_paper_operators("Rodekamp:2023wpe")
+
+# The same for the 16-cell honeycomb lattice: (4,1) ⊗ (4,1) = (1,1) ⊕ (6,1) ⊕ (9,1) of W(F₄)
+print(latex_print_multiplicities((4, 1), (4, 1), group="honeycomb"))
+honeycomb_ops = get_OperatorList(keys="V1", group="honeycomb")
 ```
 
 ```bash
@@ -98,6 +105,7 @@ Jupyter notebooks with worked examples are provided in the [`examples/`](https:/
 | [`operator_algebra.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_algebra.ipynb) | Linear combinations of operators: addition, subtraction, scalar multiplication, and mixed-irrep behaviour |
 | [`operator_catalogue.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_catalogue.ipynb) | Listing of the most relevant operators of the bundled database — V, A and T with one and two derivatives (IDs 25–80 and 113–336) — organised by number of derivatives, Dirac structure, and H(4) irrep; all the operators are in the [PDF catalogue](https://github.com/Tag-E/h4lat/wiki/Operator-catalogue) |
 | [`paper_operators.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/paper_operators.ipynb) | Operators used in published works, selected with `get_paper_operators` by INSPIRE texkey or DOI, and the code that builds them from the operators of the bundled database |
+| [`honeycomb.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/honeycomb.ipynb) | The 16-cell honeycomb group W(F₄): its irreps, how they join those of H(4), its Clebsch-Gordan coefficients, and the operators that can be measured in a nucleon at rest |
 
 A Google Colab notebook with some minimal working examples can be found [here](https://colab.research.google.com/drive/1KFnE0hi4XDNyo2Kg8iDKSSEqY1YQkPGZ?usp=sharing).
 
@@ -139,6 +147,11 @@ development install, run the tests and edit the wiki, and
 ---
 
 ## Acknowledgements
+
+The support for the 16-cell honeycomb lattice follows S. Katz and D. Nogradi,
+[*Hadron structure on the 16-cell honeycomb*](https://arxiv.org/abs/2611.21543) (arXiv:2611.21543), for the group, the
+labels of its irreps and the tables against which it is tested. The character table of that group was computed with
+[GAP](https://www.gap-system.org) (The GAP Group, *GAP – Groups, Algorithms, and Programming*).
 
 This library was developed with the assistance of [Claude](https://www.anthropic.com/claude)
 (Anthropic), an AI assistant, which helped with code generation, testing, and documentation.
