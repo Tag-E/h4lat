@@ -703,6 +703,7 @@ def test_paper_operators_labels():
         "Taggi:2026skn": ["V1", "V2", "V3", "V4", "A1", "A2", "A3", "A4"] + [f"T{i}" for i in range(1, 10)],
         "Alexandrou:2026tjs": ["{2,3,4}", "{1,3,4}", "{1,2,4}", "{1,2,3}", "{1,2,3,4}"]
         + ["{4,4,2,3} - {1,1,2,3}", "{4,4,1,3} - {2,2,1,3}", "{4,4,1,2} - {3,3,1,2}"],
+        "Katz:2026qmx": ["O_(2)", "O_(3)", "O_(4)", "Õ_(2)", "Õ_(3),1", "Õ_(3),2", "O^5_(2)", "O^5_(3)"],
         "Gockeler:2004wp": ["v_2a", "v_2b", "v_3", "v_4"],
         "LHPC:2002xzk": ["V2_a", "V2_b", "V3", "V4", "A1", "A2_a", "A2_b", "A3", "T1", "T2", "d1", "d2"],
         "Gockeler:1995wg": ["v_2a", "v_2b", "v_3", "v_4", "a_0", "a_2", "d_2"],
@@ -713,7 +714,11 @@ def test_paper_operators_labels():
 
 
 def test_paper_operators_irreps():
-    """Dirac structure, number of indices and irrep of every operator; all have a definite C-parity."""
+    """Dirac structure, number of indices, irrep and group of every operator, and their C-parities.
+
+    All the operators have a definite C-parity, except the twist-3 operators of Katz and Nogradi, which
+    combine blocks of their irrep with different C-parities (see tests/test_honeycomb.py).
+    """
     expected = {
         "Burger:2021knd": [("A", 3, (4, 3))] * 4 + [("A", 3, (8, 1))] * 8 + [("T", 3, (8, 1))] * 8,
         "Rodekamp:2023wpe": [("V", 2, (3, 1))] * 2
@@ -727,6 +732,10 @@ def test_paper_operators_irreps():
         + [("T", 4, (3, 3))] * 2
         + [("T", 4, (6, 2))] * 6,
         "Alexandrou:2026tjs": [("V", 3, (4, 2))] * 4 + [("V", 4, (1, 2))] + [("V", 4, (6, 2))] * 3,
+        # irreps of W(F₄), the group of the 16-cell honeycomb lattice
+        "Katz:2026qmx": [("V", 2, (9, 1)), ("V", 3, (8, 3)), ("V", 4, (2, 3))]
+        + [("A", 2, (9, 4)), ("A", 3, (8, 2)), ("A", 3, (8, 4))]
+        + [("A", 3, (16, 1)), ("A", 4, (9, 3))],
         "Gockeler:2004wp": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))],
         "LHPC:2002xzk": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))]
         + [("A", 1, (4, 4)), ("A", 2, (6, 4)), ("A", 2, (6, 4)), ("A", 3, (4, 3))]
@@ -735,10 +744,16 @@ def test_paper_operators_irreps():
         "Gockeler:1995wg": [("V", 2, (6, 3)), ("V", 2, (3, 1)), ("V", 3, (8, 1)), ("V", 4, (2, 1))]
         + [("A", 1, (4, 4)), ("A", 3, (4, 3)), ("A", 3, (8, 1))],
     }
+    # the operators whose C-parity is 'mixed', as (paper, label)
+    mixed_c = {("Katz:2026qmx", "O^5_(2)"), ("Katz:2026qmx", "O^5_(3)")}
+    assert list(expected) == list(AVAILABLE_PAPERS)
     for paper, structure in expected.items():
         ops = get_paper_operators(paper)
         assert [(op.X, op.n, op.irrep) for op in ops] == structure, paper
-        assert all(op.C in (1, -1) for op in ops), paper
+        # only the work on the 16-cell honeycomb lattice uses the operators of its group
+        assert all(op.group == ("honeycomb" if paper == "Katz:2026qmx" else "H4") for op in ops), paper
+        assert all(op.C in (1, -1) or (paper, op.id) in mixed_c for op in ops), paper
+        assert all(op.C == "mixed" for op in ops if (paper, op.id) in mixed_c), paper
 
 
 def test_paper_operators_selection():

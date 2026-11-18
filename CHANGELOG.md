@@ -28,6 +28,11 @@ Changes marked **Breaking** can change the results or the code of existing users
 - `cg_calc(save_raw=…)`: whether to build and save the raw symbolic blocks (default: True for H(4), False for the
   honeycomb group).
 - Wiki page "The 16-cell honeycomb group", and the notebook `examples/honeycomb.ipynb`.
+- `get_paper_operators`: the operators of Katz and Nogradi (2026), `"Katz:2026qmx"`, for the moments v₂, v₃, v₄, a₁,
+  a₂, d₂ and d₃ in a nucleon at rest (eqs. 7.20, 8.12 and 9.17 of arXiv:2611.21543). They are the first operators of
+  the honeycomb group in `get_paper_operators`, built from its bundled database (`group="honeycomb"`).
+- `scripts/regenerate_data.py --group honeycomb` reports the changes at the honeycomb operator IDs used in
+  `get_paper_operators`, as it already did for the H(4) IDs.
 
 ### Changed
 

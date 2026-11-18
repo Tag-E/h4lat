@@ -1745,6 +1745,7 @@ AVAILABLE_PAPERS = {
     "Rodekamp:2023wpe": "10.1103/PhysRevD.109.074508",
     "Taggi:2026skn": "10.1103/kknt-zxsw",
     "Alexandrou:2026tjs": "10.48550/arXiv.2607.03458",
+    "Katz:2026qmx": "10.48550/arXiv.2611.21543",
     "Gockeler:2004wp": "10.1103/PhysRevD.71.114511",
     "LHPC:2002xzk": "10.1103/PhysRevD.66.034506",
     "Gockeler:1995wg": "10.1103/PhysRevD.53.2317",
@@ -1766,9 +1767,12 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
     The paper is selected by its INSPIRE texkey (*paper*) or by its DOI (*doi*); if both are
     given, they must refer to the same paper.  Each operator is a linear combination of
-    operators of the bundled H(4) database (``Operator_from_database``), and its ``id`` is set
-    to the label of the operator.  All these works use the hypercubic lattice: the operators
-    and their irreps are those of H(4).
+    operators of a bundled database (``Operator_from_database``), and its ``id`` is set to the
+    label of the operator.  The works on the hypercubic lattice use the H(4) database, and the
+    irreps of their operators are those of H(4).  The work on the 16-cell honeycomb lattice,
+    ``"Katz:2026qmx"``, uses the database of its symmetry group W(F₄)
+    (``Operator_from_database(id, group="honeycomb")``): the irreps of its operators are those
+    of W(F₄), and their ``group`` is ``"honeycomb"``.
 
     The available papers (``AVAILABLE_PAPERS`` maps each texkey to its DOI) are:
 
@@ -1781,6 +1785,10 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
       2 derivatives: vector, irrep (4,2); axial, irrep (4,3); tensor, irreps (3,2), (3,3) and (6,2).
     * ``"Alexandrou:2026tjs"`` — C. Alexandrou et al., arXiv:2607.03458 (2026).
       Vector: 2 derivatives, irrep (4,2); 3 derivatives, irreps (1,2) and (6,2).
+    * ``"Katz:2026qmx"`` — S. Katz and D. Nogradi, arXiv:2611.21543 (2026).  16-cell honeycomb lattice,
+      irreps of W(F₄).  Vector: 1 derivative, irrep (9,1); 2 derivatives, irrep (8,3); 3 derivatives,
+      irrep (2,3).  Axial: 1 derivative, irrep (9,4); 2 derivatives, irreps (8,2), (8,4) and (16,1);
+      3 derivatives, irrep (9,3).
     * ``"Gockeler:2004wp"`` — M. Göckeler et al., Phys. Rev. D 71, 114511 (2005), arXiv:hep-ph/0410187.
       Vector: 1 derivative, irreps (6,3) and (3,1); 2 derivatives, irrep (8,1); 3 derivatives, irrep (2,1).
     * ``"LHPC:2002xzk"`` — D. Dolgov et al. (LHPC and SESAM), Phys. Rev. D 66, 034506 (2002),
@@ -2021,6 +2029,44 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
         op8.id = "{4,4,1,2} - {3,3,1,2}"
 
         return [op1, op2, op3, op4, op5, op6, op7, op8]
+
+    if paper == "Katz:2026qmx":
+        # Operators of eqs. (7.20), (8.12) and (9.17) of the paper, for the moments v_n, a_n and d_n in a nucleon at
+        # rest (polarised in the 3-direction for a_n and d_n, as with the default projector gamma_pol_index=0).
+        # The paper uses the 16-cell honeycomb lattice: the operators are built from the bundled database of its
+        # symmetry group W(F₄) (group="honeycomb"), and the irrep (k,l) is the irrep ϱ^(k)_l of the paper.
+
+        # v_2 (1 derivative): Vector - irrep (9,1)
+        opO2 = -1/6 * (Operator_from_database(32, group="honeycomb") + 4/3 * Operator_from_database(36, group="honeycomb") + 2 * Operator_from_database(39, group="honeycomb"))  # = 1/2 * (4,4 - 1/3 * (1,1 + 2,2 + 3,3))
+        # v_3 (2 derivatives): Vector - irrep (8,3)
+        opO3 = -1/6 * Operator_from_database(140, group="honeycomb")  # = 1/2 * (4,4,4 - 1/3 * ({1,1,4} + {2,2,4} + {3,3,4}))
+        # v_4 (3 derivatives): Vector - irrep (2,3)
+        opO4 = 1/2 * Operator_from_database(471, group="honeycomb")   # = 1/2 * (1,1,1,1 + 2,2,2,2 + 3,3,3,3 + 4,4,4,4) - 1/6 * ({1,1,2,2} + {1,1,3,3} + {1,1,4,4} + {2,2,3,3} + {2,2,4,4} + {3,3,4,4})
+
+        # a_1 (1 derivative): Axial - irrep (9,4)
+        opOt2 = Operator_from_database(56, group="honeycomb")                                                                   # = {3,4}
+        # a_2 (2 derivatives): Axial - irreps (8,2) and (8,4)
+        opOt3_1 = -1/2 * Operator_from_database(194, group="honeycomb") - 3/4 * Operator_from_database(198, group="honeycomb")  # = {3,4,4} - 1/2 * ({1,1,3} + {2,2,3})
+        opOt3_2 = Operator_from_database(203, group="honeycomb")                                                                # = {1,1,3} + {2,2,3} + {3,4,4} - 3 * 3,3,3
+
+        # Twist-3 operators: to match the expressions of the paper, they combine blocks of the irrep with different
+        # C-parities
+        # d_2 (2 derivatives): Axial - irrep (16,1)
+        opO5_2 = -1/4 * Operator_from_database(213, group="honeycomb") + 3/8 * Operator_from_database(218, group="honeycomb") + 1/4 * Operator_from_database(229, group="honeycomb") - 3/8 * Operator_from_database(234, group="honeycomb")  # = 3,4,4 - 4,3,4 + 1/2 * (1,3,1 + 2,3,2) - 1/2 * (3,1,1 + 3,2,2)
+        # d_3 (3 derivatives): Axial - irrep (9,3)
+        opO5_3 = -1/2 * Operator_from_database(840, group="honeycomb") + 1/4 * Operator_from_database(849, group="honeycomb") + 1/4 * Operator_from_database(858, group="honeycomb")  # = 3,4,4,4 - 3,4,3,3 + 4,3,3,3 - 4,3,4,4 + 1/2 * (1,3,{1,4} + 1,4,{1,3} + 2,3,{2,4} + 2,4,{2,3}) - 1/2 * (3,1,{1,4} + 3,2,{2,4} + 4,1,{1,3} + 4,2,{2,3})
+
+        # Set custom labels
+        opO2.id = "O_(2)"
+        opO3.id = "O_(3)"
+        opO4.id = "O_(4)"
+        opOt2.id = "Õ_(2)"
+        opOt3_1.id = "Õ_(3),1"
+        opOt3_2.id = "Õ_(3),2"
+        opO5_2.id = "O^5_(2)"
+        opO5_3.id = "O^5_(3)"
+
+        return [opO2, opO3, opO4, opOt2, opOt3_1, opOt3_2, opO5_2, opO5_3]
 
     if paper == "Gockeler:2004wp":
         # Operators of Eq. (31) of the paper, for the moments v_2, v_3 and v_4 of the unpolarised structure

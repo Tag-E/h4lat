@@ -212,7 +212,9 @@ These irreps can be selected in the bundled database of the group (see the
 shows directly whether it survives at rest. The tests of h4lat compare the database with the paper: the number of
 copies of every irrep, split by C-parity, for 0 to 3 derivatives (the off-shell columns of its Tables 3 and 4, for
 $`{H(4)}`$ and for $`{W(F_4)}`$), the decompositions of its Table 1, and its explicit operators (its eqs. 7.20, 8.12 and
-9.17), each of which is a combination of the database operators of the irrep given above.
+9.17), each of which is a combination of the database operators of the irrep given above. These explicit operators are
+returned by `get_paper_operators("Katz:2026qmx")` (see
+[Operators from the literature](https://github.com/Tag-E/h4lat/wiki/Operators-from-the-literature#available-papers)).
 
 h4lat works with the continuum Lorentz indices of the operators: how the covariant derivative $`{D_\mu}`$ itself is
 discretised on the honeycomb lattice (from the 12 short directions with a positive orientation, see
