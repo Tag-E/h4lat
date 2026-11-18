@@ -2,7 +2,9 @@
 
 `operator_list_to_h5` / `h5_to_operator_list` save an arbitrary `list[Operator]` to a single portable `.h5` file and
 reload it later, preserving every attribute needed to reconstruct each operator exactly, including
-`gamma_pol_index`, so a custom polarisation matrix set via `set_polarization_matrix()` survives the round trip. This is
+`gamma_pol_index`, so a custom polarisation matrix set via `set_polarization_matrix()` survives the round trip, and
+the lattice group of the operator, stored as the attribute `symmetry_group` (`'H4'` or `'honeycomb'`). Files written
+before the group was stored have no such attribute: their operators are read as $`{H(4)}`$ operators, which they are. This is
 a lighter-weight alternative to `make_operator_database` for saving an ad-hoc selection of operators (e.g. the output
 of `get_paper_operators`, or operators built by hand) rather than a full database:
 
@@ -28,4 +30,5 @@ operators) are stored too.
 the format of the [operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database#building-an-operator-database),
 and `Operator_from_file(path)` reads it back. Since the file name cannot store `None`, `save` refuses operators without
 `id`, `irrep`, `block` or `index_block`, such as the sums built with `+` or `-`: save those with
-`operator_list_to_h5`.
+`operator_list_to_h5`. The file name of an operator of the honeycomb group ends in `_honeycomb`, so that
+`Operator_from_file` reads it back with its group; a file name without a group is an $`{H(4)}`$ operator.

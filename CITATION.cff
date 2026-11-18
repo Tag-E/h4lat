@@ -11,7 +11,8 @@ abstract: >-
   h4lat computes Clebsch-Gordan coefficients of the hypercubic group H(4) and builds H(4)-irreducible lattice
   operators ψ̄ Γ D⋯D ψ (Γ = 𝟙, γ₅, γ_μ, γ_μγ₅, σ_μν) for moments of parton distribution functions, together with
   their kinematic factors, C-parity, trace condition and index symmetry. It ships a database of 1360 operators
-  with up to three derivatives.
+  with up to three derivatives. The same is available for the symmetry group W(F₄) of the 16-cell honeycomb
+  lattice.
 authors:
   - family-names: Taggi
     given-names: Emilio
@@ -28,6 +29,8 @@ keywords:
   - lattice QCD
   - hypercubic group
   - H(4)
+  - 16-cell honeycomb
+  - W(F4)
   - Clebsch-Gordan coefficients
   - lattice operators
   - parton distribution functions

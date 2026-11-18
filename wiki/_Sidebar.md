@@ -20,6 +20,7 @@
 1. [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group)
 2. [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients)
 3. [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators)
+4. [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)
 
 - [References](https://github.com/Tag-E/h4lat/wiki/References)
 

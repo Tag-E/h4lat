@@ -25,8 +25,9 @@ h4lat-catalogue
     default the bundled one), with the expression, kinematic factor, C-parity, trace
     condition and index symmetry of every operator.  By default it holds the S, P, V, A and
     T operators with zero, one and two derivatives; choose others with -X / --nder or --keys.
-    Wraps :func:`h4lat.operator_show`; needs pylatex (``pip install "h4lat[full]"``) and a
-    LaTeX installation (latexmk or pdflatex).
+    The operators are those of the hypercubic group H(4), or of the 16-cell honeycomb group
+    W(F4) with --group honeycomb.  Wraps :func:`h4lat.operator_show`; needs pylatex
+    (``pip install "h4lat[full]"``) and a LaTeX installation (latexmk or pdflatex).
 
 Examples::
 
@@ -36,6 +37,7 @@ Examples::
     h4lat-catalogue --keys V2 V3 A3 -j        # a selection (X + number of derivatives), on all cores
     h4lat-catalogue -o docs/ops.pdf --open    # custom path, open the PDF when done
     h4lat-catalogue --database my_operators   # catalogue of a custom operator database
+    h4lat-catalogue --group honeycomb         # the operators of the honeycomb group W(F4)
 """
 
 import argparse
@@ -51,13 +53,15 @@ selection:
   by the number of derivatives (--keys V2 V3 A3: 'V2' is the vector operators with two
   derivatives, i.e. three Lorentz indices).  Operator IDs are those of the database: a
   partial catalogue skips some of them.  The default file name and title state the
-  selection, e.g. operator_catalogue_SPVAT_nder012.pdf or operator_catalogue_V2_V3_A3.pdf.
+  selection, e.g. operator_catalogue_SPVAT_nder012.pdf or operator_catalogue_V2_V3_A3.pdf,
+  and the group if it is not H(4): operator_catalogue_honeycomb_SPVAT_nder012.pdf.
 
 examples:
   h4lat-catalogue                           # S, P, V, A, T with 0, 1, 2 derivatives
   h4lat-catalogue -X V --nder 1 2 3         # vector operators with 1 to 3 derivatives
   h4lat-catalogue --keys S0 P0 V2 -j        # a selection, kinematic factors on all cores
   h4lat-catalogue --nder 0 1 2 3 -j 8       # the whole bundled database, on 8 processes
+  h4lat-catalogue --group honeycomb -X V    # the vector operators of the honeycomb group
 """
 
 
@@ -86,7 +90,12 @@ def catalogue_main(argv=None) -> int:
     parser.add_argument(
         "--database",
         type=Path,
-        help="operator database made by make_operator_database (default: the bundled one)",
+        help="operator database made by make_operator_database (default: the bundled one of the group)",
+    )
+    parser.add_argument(
+        "--group",
+        help="lattice group: H4 (the hypercubic group) or honeycomb (the 16-cell honeycomb group W(F4)); "
+        "default: H4, or the group of the operators of --database",
     )
 
     # Which operators to write: -X / --nder, or --keys (not both; checked below).
@@ -136,6 +145,14 @@ def catalogue_main(argv=None) -> int:
     # None is -j alone (all cores); an explicit number must be at least 1, as n_jobs of operator_show.
     if args.jobs is not None and args.jobs < 1:
         parser.error("--jobs must be a positive number of processes (or -j alone for all cores)")
+    group = None
+    if args.group is not None:
+        from .groups import get_group
+
+        try:
+            group = get_group(args.group).name
+        except ValueError as err:
+            parser.error(f"--group: {err}")
 
     # Numbers of derivatives: integers, also accepted as comma-separated lists (--nder 1,2).
     nder = _split_commas(args.nder)
@@ -178,6 +195,7 @@ def catalogue_main(argv=None) -> int:
             keys=_split_commas(args.keys),
             # -j alone (None) means all cores; os.cpu_count() can return None, hence the fallback to 1
             n_jobs=args.jobs if args.jobs is not None else (os.cpu_count() or 1),
+            group=group,
         )
     except CompilerError as err:
         # the message also covers a missing compiler: "No LaTex compiler was found ..."

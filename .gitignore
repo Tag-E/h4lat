@@ -20,17 +20,23 @@ env/
 *.ipynb
 !examples/*.ipynb
 
-# Generated data (can be regenerated at runtime)
+# Generated data (can be regenerated at runtime), for H(4) and for the honeycomb group
 cg_pdf/
 cg_database/
 h4_ele/
 operator_database/
+cg_database_honeycomb/
+honeycomb_ele/
+operator_database_honeycomb/
 operator_catalogue*.pdf
 
 # Keep the bundled databases in the package data folder
 !src/h4lat/data/cg_database/
 !src/h4lat/data/h4_ele/
 !src/h4lat/data/operator_database/
+!src/h4lat/data/cg_database_honeycomb/
+!src/h4lat/data/honeycomb_ele/
+!src/h4lat/data/operator_database_honeycomb/
 
 # Local notes (*.txt in the repository root) and work directory of scripts/regenerate_data.py
 /*.txt

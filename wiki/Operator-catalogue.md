@@ -1,6 +1,7 @@
 To browse the [operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database), write a PDF catalogue of
 its operators. For each operator it lists the expression, the kinematic factor, the C-parity, the trace condition and
-the index symmetry, grouped by Dirac structure, number of indices and $`{H(4)}`$ irrep.
+the index symmetry, grouped by Dirac structure, number of indices and $`{H(4)}`$ irrep, or irrep of the
+[16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group) with `--group honeycomb`.
 
 ## From the command line
 
@@ -19,11 +20,13 @@ h4lat-catalogue --keys V2 V3 A3 -j        # a selection, on all cores -> operato
 h4lat-catalogue --nder 0 1 2 3 -j         # the whole bundled database
 h4lat-catalogue -o docs/ops.pdf --open    # custom path, open the PDF when done
 h4lat-catalogue --database my_operators   # catalogue of a custom operator database
+h4lat-catalogue --group honeycomb         # the honeycomb operators -> operator_catalogue_honeycomb_SPVAT_nder012.pdf
 ```
 
 The operator IDs are those of the database, so a partial catalogue skips some of them; the sections always come in
-database order. The default file name and title state the selection. The command prints the selection and progress
-bars over the operators (`-q` to silence them).
+database order. The default file name and title state the selection, and the group if it is not $`{H(4)}`$. With
+`--database`, the group is that of the operators of the database (their file names record it). The command prints the
+selection and progress bars over the operators (`-q` to silence them).
 
 The command is installed with the package. It needs `pylatex` (`pip install "h4lat[full]"`) and a LaTeX installation
 that provides `latexmk` or `pdflatex` (e.g. TeX Live). See `h4lat-catalogue --help` for all options. With a
@@ -39,6 +42,7 @@ from h4lat import operator_show
 operator_show(show=False)                                    # S, P, V, A, T with 0, 1, 2 derivatives
 operator_show(X="V", nder=[1, 2, 3], show=False)             # vector operators with 1 to 3 derivatives
 operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # n_jobs=None: all cores
+operator_show(group="honeycomb", show=False)                 # the operators of the honeycomb group
 ```
 
 In a script, call it with `n_jobs > 1` under `if __name__ == "__main__":`, as usual with multiprocessing.
@@ -48,7 +52,9 @@ In a script, call it with `n_jobs > 1` under `if __name__ == "__main__":`, as us
 The catalogue of the whole bundled database is attached to every
 [release](https://github.com/Tag-E/h4lat/releases): download the one of the
 [latest release](https://github.com/Tag-E/h4lat/releases/latest/download/operator_catalogue_SPVAT_nder0123.pdf), or
-the one of the release you use, since operator IDs can change between versions.
+the one of the release you use, since operator IDs can change between versions. The releases that include the
+honeycomb group also have the catalogue of its database,
+[operator_catalogue_honeycomb_SPVAT_nder0123.pdf](https://github.com/Tag-E/h4lat/releases/latest/download/operator_catalogue_honeycomb_SPVAT_nder0123.pdf).
 
 If you have no LaTeX installation, the
 [`operator_catalogue.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_catalogue.ipynb) notebook

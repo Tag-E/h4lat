@@ -1,5 +1,6 @@
-*Theory, part 2 of 3.* Previous: [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) ·
-Next: [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators)
+*Theory, part 2 of 4.* Previous: [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) ·
+Next: [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators) ·
+[The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)
 
 ## From the decomposition to the coefficients
 
@@ -210,6 +211,12 @@ $`{\tau^{(4)}_1 \otimes \tau^{(4)}_1}`$ and $`{\tau^{(4)}_4 \otimes \tau^{(4)}_1
 $`{X}`$ alone, whose Clebsch-Gordan matrix is the identity. The symbolic blocks of Eq. (2) are bundled only for
 $`{k \le 2}`$, because for $`{k = 3}`$ they would take tens of MB. Any other product is computed on demand: see
 [Computing Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Computing-Clebsch-Gordan-coefficients).
+
+The method does not depend on the group: h4lat applies it in the same way, with its 1152 elements, to the group of
+the [16-cell honeycomb](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group), whose irreps of the Dirac
+structures and of the derivatives have the same labels. The same products are bundled for it, without the symbolic
+blocks. In both groups h4lat computes the coefficients of Eq. (2) numerically and fixes the free parameters directly
+on them, as described above; the symbolic blocks are built only when they are to be saved.
 
 ```python
 from h4lat import cg_calc, irrep_index

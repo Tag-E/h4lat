@@ -1,10 +1,15 @@
 All the names below are imported by `import h4lat` (they are listed in `h4lat.__all__`). Every function and class has
 a detailed docstring: use `help(h4lat.cg_calc)`, or `h4lat.cg_calc?` in Jupyter.
 
+The functions that depend on the lattice group take the argument `group`: `None` or `'H4'` (the default) for the
+hypercubic group, `'honeycomb'` for the group of the 16-cell honeycomb lattice.
+
 ## Modules
 
 | Module | Contents |
 |--------|----------|
+| `h4lat.groups` | `get_group`, `LatticeGroup`: the lattice groups $`{H(4)}`$ and $`{W(F_4)}`$ (16-cell honeycomb), their irreps and character tables |
+| `h4lat.honeycomb` | Construction of the 1152 elements of $`{W(F_4)}`$ and of the matrices of its irreps |
 | `h4lat.cg_calculator` | `cg_calc`, `get_multiplicities`, the $`{H(4)}`$ group constants and generator matrices |
 | `h4lat.moments_operator` | `Operator`, the operator database, kinematic factors, C-parity and symmetry analysis, HDF5 I/O, the PDF catalogue |
 | `h4lat.kinematic_data` | Euclidean gamma matrices, symbolic momenta, polarisation projectors |
@@ -20,7 +25,8 @@ a detailed docstring: use `help(h4lat.cg_calc)`, or `h4lat.cg_calc?` in Jupyter.
 | `latex_print_multiplicities` | The decomposition of a tensor product as a LaTeX string |
 | `CGmat_from_block` | Fixes the free parameters of a symbolic Clebsch-Gordan block ([theory](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients#fixing-the-free-parameters)) |
 | `print_CGmat` | Pretty-prints a Clebsch-Gordan matrix in Jupyter |
-| `rep_label_list`, `rep_dim_list`, `n_rep` | The 20 irrep labels `(k, l)`, their dimensions, and their number |
+| `get_group`, `LatticeGroup`, `AVAILABLE_GROUPS` | The lattice groups: `get_group("honeycomb")` describes $`{W(F_4)}`$ (irrep labels, character table, …), `get_group()` $`{H(4)}`$ ([theory](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)) |
+| `rep_label_list`, `rep_dim_list`, `n_rep` | The 20 irrep labels `(k, l)` of $`{H(4)}`$, their dimensions, and their number (the same attributes of `get_group(group)` hold those of any group) |
 | `irrep_index`, `irrep_dim`, `irrep_texname` | Position in `rep_label_list`, dimension and LaTeX name of an irrep label |
 | `char_table`, `class_orders` | The character table (irreps × classes) and the number of elements of each class |
 | `n_ele_h4`, `n_ele_s4` | The orders of $`{H(4)}`$ (384) and $`{S_4}`$ (24) |

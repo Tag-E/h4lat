@@ -12,6 +12,21 @@
   The projection formula used to compute the Clebsch-Gordan coefficients.
 - H. F. Jones, *Groups, Representations and Physics* (Adam Hilger, Bristol, 1990).
   Background on finite groups, representations and characters.
+- The GAP Group, *GAP – Groups, Algorithms, and Programming*, [www.gap-system.org](https://www.gap-system.org).
+  The character table of the 16-cell honeycomb group $`{W(F_4)}`$ was computed with GAP (h4lat builds the matrices of
+  the group itself, and its tests check the table without GAP): see
+  [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group#irreducible-representations).
+
+## The 16-cell honeycomb lattice
+
+- S. Katz and D. Nogradi, *QCD on the 16-cell honeycomb*, Phys. Rev. D **114**, 054504 (2026),
+  [arXiv:2512.10604](https://arxiv.org/abs/2512.10604).
+  The 16-cell honeycomb lattice for lattice QCD, and its smaller cut-off effects.
+- S. Katz and D. Nogradi, *Hadron structure on the 16-cell honeycomb*,
+  [arXiv:2611.21543](https://arxiv.org/abs/2611.21543).
+  The group $`{W(F_4)}`$: the generators, the labels and definitions of the 25 irreps used by h4lat, how they restrict
+  to $`{H(4)}`$, and the classification of the operators for the moments of the parton distributions, whose tables
+  the tests of h4lat reproduce.
 
 ## Lattice operators
 

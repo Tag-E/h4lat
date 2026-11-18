@@ -96,14 +96,8 @@ try:
 except ImportError:
     _H5PY_AVAILABLE = False
 
-from .cg_calculator import (
-    _BUNDLED_OPERATOR_DATABASE,
-    cg_calc,
-    get_multiplicities,
-    irrep_index,
-    rep_label_list,
-    rep_latex_names,
-)
+from .cg_calculator import _bundled, cg_calc
+from .groups import LatticeGroup, get_group
 from .kinematic_data import (
     E,
     Gamma_pol_list,
@@ -126,8 +120,11 @@ from .utilities import all_equal, parity
 # number of derivatives (and in which catalogue titles and file names list them).
 _X_ORDER = ('S', 'P', 'V', 'A', 'T')
 
-# H(4) irrep of the Dirac structure Γ of ψ̄ Γ D … D ψ: the first factor of the tensor product
-# of an operator, followed by one fundamental (4,1) factor per derivative.
+# Irrep of the Dirac structure Γ of ψ̄ Γ D … D ψ: the first factor of the tensor product of an
+# operator, followed by one fundamental (4,1) factor per derivative.  The labels are the same in
+# H(4) and in the honeycomb group W(F₄): 𝟙 is the trivial irrep (1,1), γ₅ the determinant (1,4),
+# γ_μ the vector R = (4,1), γ_μγ₅ det⊗R = (4,4), and σ_μν the antisymmetric tensors Λ²R = (6,1),
+# in the same bases (see the module honeycomb).
 _DIRAC_IRREP = {'S': (1, 1), 'P': (1, 4), 'V': (4, 1), 'A': (4, 4), 'T': (6, 1)}
 
 # Number of Lorentz indices carried by each Dirac structure: none for 𝟙 and γ₅, one for γ_μ
@@ -153,7 +150,7 @@ def _n_indices(nder: int, X: str) -> int:
 
 
 def _operator_irreps(X: str, nder: int) -> tuple[tuple[int, int], ...]:
-    """Tensor product of H(4) irreps of the operators ψ̄ Γ^X D_{μ₁} … D_{μ_nder} ψ.
+    """Tensor product of irreps of the operators ψ̄ Γ^X D_{μ₁} … D_{μ_nder} ψ (the same labels in both groups).
 
     The irrep of the Dirac structure (see _DIRAC_IRREP) followed by one (4,1) per derivative,
     e.g. ``((1, 1),)`` for ψ̄ψ and ``((6, 1), (4, 1), (4, 1))`` for σ_{μν} with two derivatives.
@@ -194,6 +191,10 @@ class Operator:
     * ``symm`` — index-permutation symmetry ('Symmetric', 'Antisymmetric',
       'Mixed Symmetry', or '[Invalid Operator]' for tensorial cases).
 
+    The irrep label ``irrep`` refers to the lattice symmetry group ``group``: ``'H4'``
+    (the hypercubic group, the default) or ``'honeycomb'`` (the group W(F₄) of the 16-cell
+    honeycomb).  The same label can denote different irreps of the two groups.
+
     The symbolic attributes, which take most of the time, are computed on first
     access and then cached, so that loading many operators stays fast:
     * ``O``  — the symbolic operator expression (for display/LaTeX).
@@ -214,6 +215,7 @@ class Operator:
         block: int | None,
         index_block: int | None,
         gamma_pol_index: int = 0,
+        group: str | LatticeGroup | None = None,
     ) -> None:
         """
         Parameters
@@ -229,7 +231,7 @@ class Operator:
             ``'T'`` (tensor σ_{μν} = i/2 [γ_μ, γ_ν]), ``'S'`` (scalar 𝟙),
             or ``'P'`` (pseudoscalar γ₅).
         irrep : tuple[int,int] or None
-            H(4) irrep label, e.g. ``(4,1)``.
+            Label of the irrep of *group*, e.g. ``(4,1)``.
         block : int or None
             Multiplicity index (1-based) within the irrep.
         index_block : int or None
@@ -246,9 +248,23 @@ class Operator:
             Each projector has the form Γ_pol = ½(1 + γ₄)(1 − i γ_a γ_b).
             The stored value can be changed after construction via
             ``set_polarization_matrix()``.
+        group : str, LatticeGroup or None, optional
+            Lattice symmetry group of the irrep: None (default) or ``'H4'`` for H(4),
+            ``'honeycomb'`` for the 16-cell honeycomb group W(F₄).  Stored as the group name,
+            ``'H4'`` or ``'honeycomb'``.
+
+        Raises
+        ------
+        ValueError
+            If *gamma_pol_index* is not 0–5, if the group is unknown, or if *irrep* is not an
+            irrep of the group.
         """
         if not 0 <= gamma_pol_index <= 5:
             raise ValueError(f"gamma_pol_index must be 0–5, got {gamma_pol_index}.")
+        lattice_group = get_group(group)
+        if irrep is not None:
+            # a tuple of Python ints (also for a label read from a file), and a label of the group
+            irrep = lattice_group.check_irreps([irrep])[0]
         # An array also for a 0-index cgmat, which arithmetic on operators may turn into a
         # NumPy scalar; [...] keeps the view semantics of the former cgmat[:], which fails for it.
         cgmat = np.asarray(cgmat)
@@ -258,6 +274,8 @@ class Operator:
         self.irrep = irrep
         self.block = block
         self.index_block = index_block
+        # The name of the group ('H4' or 'honeycomb'): a plain string, simple to save and compare.
+        self.group = lattice_group.name
 
         # Index of the polarisation projector used for computing K.
         self.gamma_pol_index = gamma_pol_index
@@ -338,13 +356,19 @@ class Operator:
     # ------------------------------------------------------------------
 
     def __add__(self, other: Self) -> Self:
-        """Add two operators with matching X, index count, and polarisation index."""
+        """Add two operators with matching X, index count, polarisation index and group."""
         if self.X != other.X or self.n != other.n:
             raise ValueError("Operator addition requires equal X and number of indices.")
         if self.gamma_pol_index != other.gamma_pol_index:
             raise ValueError(
                 "Operator addition requires equal gamma_pol_index "
                 f"(got {self.gamma_pol_index} and {other.gamma_pol_index})."
+            )
+        if self.group != other.group:
+            # the same irrep label means different irreps in different groups
+            raise ValueError(
+                f"Operator addition requires operators of the same lattice group "
+                f"(got {self.group} and {other.group})."
             )
         new_irrep = self.irrep if self.irrep == other.irrep else None
         new_block = self.block if (new_irrep and self.block == other.block) else None
@@ -356,16 +380,23 @@ class Operator:
             block=new_block,
             index_block=None,
             gamma_pol_index=self.gamma_pol_index,
+            group=self.group,
         )
 
     def __sub__(self, other: Self) -> Self:
-        """Subtract two operators with matching X, index count, and polarisation index."""
+        """Subtract two operators with matching X, index count, polarisation index and group."""
         if self.X != other.X or self.n != other.n:
             raise ValueError("Operator subtraction requires equal X and number of indices.")
         if self.gamma_pol_index != other.gamma_pol_index:
             raise ValueError(
                 "Operator subtraction requires equal gamma_pol_index "
                 f"(got {self.gamma_pol_index} and {other.gamma_pol_index})."
+            )
+        if self.group != other.group:
+            # the same irrep label means different irreps in different groups
+            raise ValueError(
+                f"Operator subtraction requires operators of the same lattice group "
+                f"(got {self.group} and {other.group})."
             )
         new_irrep = self.irrep if self.irrep == other.irrep else None
         new_block = self.block if (new_irrep and self.block == other.block) else None
@@ -377,6 +408,7 @@ class Operator:
             block=new_block,
             index_block=None,
             gamma_pol_index=self.gamma_pol_index,
+            group=self.group,
         )
 
     def __mul__(self, coefficient: float) -> Self:
@@ -389,6 +421,7 @@ class Operator:
             block=self.block,
             index_block=self.index_block,
             gamma_pol_index=self.gamma_pol_index,
+            group=self.group,
         )
 
     def __rmul__(self, coefficient: float) -> Self:
@@ -406,6 +439,7 @@ class Operator:
             block=self.block,
             index_block=self.index_block,
             gamma_pol_index=self.gamma_pol_index,
+            group=self.group,
         )
 
     def __neg__(self) -> Self:
@@ -417,6 +451,7 @@ class Operator:
             block=self.block,
             index_block=self.index_block,
             gamma_pol_index=self.gamma_pol_index,
+            group=self.group,
         )
 
     # ------------------------------------------------------------------
@@ -543,7 +578,10 @@ class Operator:
 
         The filename encodes all operator metadata so that the operator can be
         fully reconstructed by ``Operator_from_file`` without any external
-        catalogue.
+        catalogue:
+        ``operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy`` for an
+        H(4) operator (the format used since the first versions of h4lat), and the
+        same name ending in ``_honeycomb`` for an operator of the honeycomb group.
 
         Parameters
         ----------
@@ -570,7 +608,8 @@ class Operator:
         Path(folder).mkdir(parents=True, exist_ok=True)
         filename = (
             f"{folder}/operator_{self.id}_{self.n}_{self.X}"
-            f"_{self.irrep[0]}_{self.irrep[1]}_{self.block}_{self.index_block}.npy"
+            f"_{self.irrep[0]}_{self.irrep[1]}_{self.block}_{self.index_block}"
+            f"{get_group(self.group).operator_file_suffix}.npy"
         )
         np.save(filename, self.cgmat)
 
@@ -1109,8 +1148,9 @@ def make_operator_database(
     max_nder: int,
     verbose: bool = False,
     cg_database: str | None = None,
+    group: str | LatticeGroup | None = None,
 ) -> None:
-    """Build the database of H(4)-irreducible lattice operators with up to *max_nder* derivatives.
+    """Build the database of irreducible lattice operators with up to *max_nder* derivatives.
 
     The database holds the operators ψ̄ Γ^X D_{μ₁} … D_{μ_k} ψ of every Dirac structure
     X = S (𝟙), P (γ₅), V (γ_μ), A (γ_μ γ₅), T (σ_{μν}) and every number of derivatives
@@ -1118,10 +1158,17 @@ def make_operator_database(
     product irrep(X) ⊗ (4,1)^k.  Each operator is saved to a .npy file whose filename
     encodes its metadata (see ``Operator.save``).
 
+    The operators transform in the irreps of the lattice group *group*: H(4) by default,
+    the 16-cell honeycomb group W(F₄) with ``group='honeycomb'``.
+
     The operators are numbered from 1, by increasing number of derivatives and, for each,
     in the order S, P, V, A, T; within a Dirac structure they follow the order of the
-    irreps (as in ``rep_label_list``), of the copies of an irrep and of the components
-    of a copy.  The bundled database is ``make_operator_database(folder, max_nder=3)``.
+    irreps (as in the ``rep_label_list`` of the group), of the copies of an irrep and of
+    the components of a copy.  Since every product holds as many operators as its
+    dimension, the range of IDs of each Dirac structure and number of derivatives is the
+    same for both groups.  The bundled databases are
+    ``make_operator_database(folder, max_nder=3)`` and
+    ``make_operator_database(folder, max_nder=3, group='honeycomb')``.
 
     Parameters
     ----------
@@ -1131,12 +1178,15 @@ def make_operator_database(
         differently, would be mixed with the new ones.
     max_nder : int
         Maximum number of derivatives (≥ 0).  The CG coefficients are bundled up to three
-        derivatives; the products of more irreps are computed by ``cg_calc`` (into
-        ./cg_database or *cg_database*), which for four derivatives takes a lot of memory.
+        derivatives; the products of more irreps are computed by ``cg_calc`` (into the local
+        database, ./cg_database or ./cg_database_honeycomb, or *cg_database*), which for four
+        derivatives takes a lot of memory.
     verbose : bool
         Print progress messages.
     cg_database : str or None
         Path to the CG-coefficient database.  ``None`` → use the bundled data.
+    group : str, LatticeGroup or None
+        Lattice group: None (default) or ``'H4'`` for H(4), ``'honeycomb'`` for W(F₄).
 
     Raises
     ------
@@ -1152,8 +1202,9 @@ def make_operator_database(
             f"{operator_folder} already holds operator files: write the database to an empty or new folder."
         )
     Path(operator_folder).mkdir(parents=True, exist_ok=True)
+    group = get_group(group)
 
-    kwargs: dict = dict(verbose=False, force_computation=False)
+    kwargs: dict = dict(group=group, verbose=False, force_computation=False)
     if cg_database is not None:
         kwargs['cgdatabase'] = cg_database
 
@@ -1176,14 +1227,34 @@ def make_operator_database(
                             cgmat=_cgmat_from_column(block[:, icol], X, nder),
                             id=iop,
                             X=X,
-                            irrep=rep_label_list[k],
+                            irrep=group.rep_label_list[k],
                             block=imul + 1,
                             index_block=icol + 1,
+                            group=group,
                         ).save(operator_folder)
                         iop += 1
 
     if verbose:
         print(f"\nAll operators saved in {operator_folder}\n")
+
+
+def _file_metadata(filename: str | Path) -> tuple[list[str], str]:
+    """The metadata fields of an operator file name, and the name of the group of the operator.
+
+    The name is ``operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy`` for an
+    H(4) operator, with ``_{group}`` (e.g. ``_honeycomb``) before ``.npy`` for an operator of
+    another group (see ``Operator.save``).  Returns the 7 fields id … index_block, as strings,
+    and the group name.
+    """
+    # Path(...).stem is the file name without its folders and without the .npy suffix.
+    # Path splits at the separators of the operating system (also '\' on Windows), so
+    # that underscores in folder names never reach the split('_') below.
+    fields = Path(filename).stem.split("_")[1:]
+    if len(fields) == 7:
+        return fields, 'H4'
+    if len(fields) == 8:
+        return fields[:7], get_group(fields[7]).name
+    raise ValueError(f"{Path(filename).name} is not the name of an operator file written by Operator.save")
 
 
 def Operator_from_file(filename: str | Path) -> Operator:
@@ -1193,18 +1264,16 @@ def Operator_from_file(filename: str | Path) -> Operator:
     ----------
     filename : str or Path
         Path to a file saved by ``Operator.save()``.  The filename format is
-        ``operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy``.
+        ``operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy`` for an
+        operator of H(4), and the same with ``_{group}`` before ``.npy`` (e.g.
+        ``_honeycomb``) for an operator of another lattice group.
 
     Returns
     -------
     Operator
     """
     cgmat = np.load(filename)
-    # Path(...).stem is the file name without its folders and without the .npy suffix.
-    # Path splits at the separators of the operating system (also '\' on Windows), so
-    # that underscores in folder names never reach the split('_') below.
-    base = Path(filename).stem
-    id_, n, X, irrep0, irrep1, block, index_block = base.split("_")[1:]
+    (id_, n, X, irrep0, irrep1, block, index_block), group = _file_metadata(filename)
     return Operator(
         cgmat=cgmat,
         id=int(id_),
@@ -1212,19 +1281,38 @@ def Operator_from_file(filename: str | Path) -> Operator:
         irrep=(int(irrep0), int(irrep1)),
         block=int(block),
         index_block=int(index_block),
+        group=group,
     )
 
 
-def _database_files(operator_database: str | None) -> list[Path]:
-    """The operator files of *operator_database* (default: the bundled one), sorted by operator id."""
+def _database_files(operator_database: str | None, group: str | LatticeGroup | None = None) -> list[Path]:
+    """
+    The operator files of *operator_database*, sorted by operator id.
+
+    Without *operator_database*, the bundled database of *group* (H(4) by default).  With
+    both, the operators of the folder must belong to *group*.
+
+    Raises
+    ------
+    ValueError
+        If the folder does not exist, or if its operators are not all of *group* (when given).
+    """
     if operator_database is None:
-        operator_database = _BUNDLED_OPERATOR_DATABASE
+        operator_database = _bundled(get_group(group), 'operator_database')
     if not Path(operator_database).is_dir():
         raise ValueError(f"Path does not exist: {operator_database}")
-    return sorted(
+    files = sorted(
         [x for x in Path(operator_database).glob('**/*') if x.is_file()],
         key=lambda x: int(x.name.split("_")[1]),
     )
+    if group is not None:
+        expected = get_group(group).name
+        found = sorted({_file_metadata(file)[1] for file in files} - {expected})
+        if found:
+            raise ValueError(
+                f"{operator_database} holds operators of the group {', '.join(found)}, not of the group {expected}"
+            )
+    return files
 
 
 def _selected_files(
@@ -1232,16 +1320,18 @@ def _selected_files(
     X: str | Iterable[str] | None,
     nder: int | Iterable[int] | None,
     keys: str | Iterable[str] | None,
+    group: str | LatticeGroup | None = None,
 ) -> list[Path]:
     """The files of the operators selected by *X*, *nder* and *keys* (see _operator_filter), sorted by id.
 
     The selection is read from the metadata in the file names (``Operator.save``), so the
-    operators that are left out are never loaded.
+    operators that are left out are never loaded.  *operator_database* and *group* are those
+    of _database_files.
     """
     selected = _operator_filter(X=X, nder=nder, keys=keys)
     files = []
-    for file in _database_files(operator_database):
-        # file name: operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}.npy
+    for file in _database_files(operator_database, group):
+        # file name: operator_{id}_{n}_{X}_{irrep0}_{irrep1}_{block}_{index_block}[_{group}].npy
         n, x = file.stem.split("_")[2:4]
         if selected(x, _n_der(int(n), x)):
             files.append(file)
@@ -1254,6 +1344,7 @@ def OperatorList_from_database(
     X: str | Iterable[str] | None = None,
     nder: int | Iterable[int] | None = None,
     keys: str | Iterable[str] | None = None,
+    group: str | LatticeGroup | None = None,
 ) -> list[Operator]:
     """Return a list of the operators in *operator_database*, sorted by id.
 
@@ -1264,7 +1355,7 @@ def OperatorList_from_database(
     ----------
     operator_database : str, optional
         Path to a directory created by ``make_operator_database``.  Defaults
-        to the operator database bundled with the package.
+        to the operator database bundled with the package, that of *group*.
     X : str or iterable of str, optional (keyword only)
         Dirac structures among ``'S'``, ``'P'``, ``'V'``, ``'A'``, ``'T'`` (``'VA'`` is
         the same as ``['V', 'A']``).  Default: all.
@@ -1273,6 +1364,10 @@ def OperatorList_from_database(
     keys : str or iterable of str, optional (keyword only)
         Groups ``'<X><number of derivatives>'``, e.g. ``"S0 P0"`` or ``["V2", "A3"]``.
         Cannot be combined with *X* or *nder*.
+    group : str, LatticeGroup or None, optional (keyword only)
+        Lattice group: ``'H4'`` or ``'honeycomb'``.  Without *operator_database* it selects
+        the bundled database (default: H(4)); with it, it is only checked against the group
+        recorded in the file names (each operator has the group of its file in any case).
 
     Returns
     -------
@@ -1281,13 +1376,15 @@ def OperatorList_from_database(
     Raises
     ------
     ValueError
-        If the path does not exist or the selection is not valid.
+        If the path does not exist, the selection is not valid or the operators of the
+        folder are not of *group*.
 
     Examples
     --------
     >>> ops = OperatorList_from_database("my_operators", X="SP", nder=0)   # ψ̄ψ and ψ̄γ₅ψ
+    >>> ops = OperatorList_from_database(group="honeycomb", keys="V1")      # bundled W(F₄) operators
     """
-    return [Operator_from_file(f.as_posix()) for f in _selected_files(operator_database, X, nder, keys)]
+    return [Operator_from_file(f.as_posix()) for f in _selected_files(operator_database, X, nder, keys, group)]
 
 
 def OperatorDict_from_database(
@@ -1296,6 +1393,7 @@ def OperatorDict_from_database(
     X: str | Iterable[str] | None = None,
     nder: int | Iterable[int] | None = None,
     keys: str | Iterable[str] | None = None,
+    group: str | LatticeGroup | None = None,
 ) -> dict:
     """Load the operators into a nested dict keyed by ``(n, X)`` then ``(irrep, block)``.
 
@@ -1313,17 +1411,19 @@ def OperatorDict_from_database(
     ----------
     operator_database : str, optional
         Path to a directory created by ``make_operator_database``.  Defaults
-        to the operator database bundled with the package.
+        to the operator database bundled with the package, that of *group*.
     X, nder, keys : optional (keyword only)
         Select some of the operators, as in :func:`OperatorList_from_database`
         (default: all of them).
+    group : str, LatticeGroup or None, optional (keyword only)
+        Lattice group, as in :func:`OperatorList_from_database`.
 
     Returns
     -------
     dict
     """
     operators_dict: dict = {}
-    for file in _selected_files(operator_database, X, nder, keys):
+    for file in _selected_files(operator_database, X, nder, keys, group):
         op = Operator_from_file(file.as_posix())
         if (op.n, op.X) not in operators_dict:
             operators_dict[(op.n, op.X)] = {}
@@ -1333,7 +1433,9 @@ def OperatorDict_from_database(
     return operators_dict
 
 
-def Operator_from_database(operator_id: int, operator_database: str | None = None) -> Operator:
+def Operator_from_database(
+    operator_id: int, operator_database: str | None = None, group: str | LatticeGroup | None = None
+) -> Operator:
     """Load a single operator by its integer id from *operator_database*.
 
     Parameters
@@ -1342,13 +1444,15 @@ def Operator_from_database(operator_id: int, operator_database: str | None = Non
         1-based operator id as listed in the operator catalogue.
     operator_database : str, optional
         Path to a directory created by ``make_operator_database``.  Defaults
-        to the operator database bundled with the package.
+        to the operator database bundled with the package, that of *group*.
+    group : str, LatticeGroup or None, optional
+        Lattice group, as in :func:`OperatorList_from_database` (default: H(4)).
 
     Returns
     -------
     Operator
     """
-    files = _database_files(operator_database)
+    files = _database_files(operator_database, group)
     if not isinstance(operator_id, int) or operator_id < 1 or operator_id > len(files):
         raise ValueError(f"operator_id must be between 1 and {len(files)}, got {operator_id}.")
     return Operator_from_file(files[operator_id - 1].as_posix())
@@ -1359,6 +1463,7 @@ def get_OperatorList(
     X: str | Iterable[str] | None = None,
     nder: int | Iterable[int] | None = None,
     keys: str | Iterable[str] | None = None,
+    group: str | LatticeGroup | None = None,
 ) -> list[Operator]:
     """Return the operators of the bundled database as a flat sorted list.
 
@@ -1384,6 +1489,9 @@ def get_OperatorList(
     keys : str or iterable of str, optional (keyword only)
         Groups ``'<X><number of derivatives>'``, e.g. ``"S0 P0"`` or
         ``["V2", "A3"]``.  Cannot be combined with *X* or *nder*.
+    group : str, LatticeGroup or None, optional (keyword only)
+        Lattice group whose bundled database is read: None (default) or ``'H4'`` for
+        H(4), ``'honeycomb'`` for the 16-cell honeycomb group W(F₄).
 
     Returns
     -------
@@ -1395,16 +1503,17 @@ def get_OperatorList(
     >>> ops = get_OperatorList()
     >>> print(len(ops))           # total number of bundled operators
     >>> print(ops[0].X)           # Dirac structure of the first operator
-    >>> print(ops[0].irrep)       # H(4) irrep label of the first operator
+    >>> print(ops[0].irrep)       # irrep label of the first operator (of H(4), ops[0].group)
     >>> print(ops[0].latex_K)     # kinematic factor as a LaTeX string
     >>> local = get_OperatorList(nder=0)            # ψ̄ Γ ψ for Γ = 𝟙, γ₅, γ_μ, γ_μγ₅, σ_μν
     >>> scalars = get_OperatorList(X="S", nder=2)   # ψ̄ D_μ D_ν ψ
     >>> some = get_OperatorList(keys="V1 A1")       # V and A with one derivative
+    >>> wf4 = get_OperatorList(keys="V1", group="honeycomb")   # irreps (1,1), (6,1), (9,1) of W(F₄)
     """
-    # Passing no database makes OperatorList_from_database fall back to
-    # _BUNDLED_OPERATOR_DATABASE, which points at the data/ folder inside the
-    # installed package (resolved via importlib.resources).
-    return OperatorList_from_database(X=X, nder=nder, keys=keys)
+    # Passing no database makes OperatorList_from_database fall back to the bundled
+    # database of the group, in the data/ folder inside the installed package (resolved
+    # via importlib.resources).
+    return OperatorList_from_database(X=X, nder=nder, keys=keys, group=group)
 
 
 def get_OperatorDict(
@@ -1412,6 +1521,7 @@ def get_OperatorDict(
     X: str | Iterable[str] | None = None,
     nder: int | Iterable[int] | None = None,
     keys: str | Iterable[str] | None = None,
+    group: str | LatticeGroup | None = None,
 ) -> dict:
     """Return the operators of the bundled database as a nested dictionary.
 
@@ -1431,7 +1541,7 @@ def get_OperatorDict(
       for S/P, 1 + the number of derivatives for V/A, 2 + the number of
       derivatives for T.
     * *X* is the Dirac structure (``'S'``, ``'P'``, ``'V'``, ``'A'`` or ``'T'``).
-    * *irrep* is an H(4) label ``(k, l)`` (e.g. ``(4, 1)``).
+    * *irrep* is an irrep label ``(k, l)`` of the group (e.g. ``(4, 1)``).
     * *block* is the multiplicity index (1-based) within the irrep.
 
     This layout makes it straightforward to look up all operators of a given
@@ -1444,6 +1554,8 @@ def get_OperatorDict(
     ----------
     X, nder, keys : optional (keyword only)
         Select some of the operators, as in :func:`get_OperatorList` (default: all).
+    group : str, LatticeGroup or None, optional (keyword only)
+        Lattice group whose bundled database is read, as in :func:`get_OperatorList`.
 
     Returns
     -------
@@ -1459,11 +1571,13 @@ def get_OperatorDict(
     >>> print(ops[0].symm)        # index-permutation symmetry
     >>> print(ops[0].C)           # C-parity eigenvalue
     >>> d = get_OperatorDict(X="S", nder=2)   # only the key (2, 'S')
+    >>> d = get_OperatorDict(keys="V1", group="honeycomb")
+    >>> ops = d[(2, 'V')][(9, 1), 1]          # the irrep (9,1) of W(F₄): (3,1) ⊕ (6,3) of H(4)
     """
-    # Passing no database makes OperatorDict_from_database fall back to
-    # _BUNDLED_OPERATOR_DATABASE, which points at the data/ folder inside the
-    # installed package (resolved via importlib.resources).
-    return OperatorDict_from_database(X=X, nder=nder, keys=keys)
+    # Passing no database makes OperatorDict_from_database fall back to the bundled
+    # database of the group, in the data/ folder inside the installed package (resolved
+    # via importlib.resources).
+    return OperatorDict_from_database(X=X, nder=nder, keys=keys, group=group)
 
 
 def get_op_selection(n_der: int) -> list[Operator]:
@@ -1472,7 +1586,8 @@ def get_op_selection(n_der: int) -> list[Operator]:
     This function returns the standard set of operators used in the
     moments-operator mixing analysis, loaded from the bundled database.
     The operators are the irreducible H(4) representations relevant for
-    each dataset (1, 2, or 3 derivatives).
+    each dataset (1, 2, or 3 derivatives).  They are operators of H(4): the
+    IDs below are those of the bundled H(4) database.
 
     Parameters
     ----------
@@ -1651,8 +1766,9 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
     The paper is selected by its INSPIRE texkey (*paper*) or by its DOI (*doi*); if both are
     given, they must refer to the same paper.  Each operator is a linear combination of
-    operators of the bundled database (``Operator_from_database``), and its ``id`` is set to
-    the label of the operator.
+    operators of the bundled H(4) database (``Operator_from_database``), and its ``id`` is set
+    to the label of the operator.  All these works use the hypercubic lattice: the operators
+    and their irreps are those of H(4).
 
     The available papers (``AVAILABLE_PAPERS`` maps each texkey to its DOI) are:
 
@@ -2102,10 +2218,10 @@ def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:
     return latex_str
 
 
-def irrep_count_table(n_der: int, split: bool = False) -> None:
+def irrep_count_table(n_der: int, split: bool = False, group: str | LatticeGroup | None = None) -> None:
     """Print a table of cumulative irrep counts across all starting structures.
 
-    For each of the 20 H(4) irreps lists:
+    For each irrep of the group (the 20 of H(4), or the 25 of the honeycomb group) lists:
 
     * **Label** — LaTeX name of the irrep.
     * **Count** — cumulative number of appearances summed over all five starting
@@ -2119,18 +2235,23 @@ def irrep_count_table(n_der: int, split: bool = False) -> None:
     n_der : int
         Number of derivatives.
     split : bool
-        If ``False`` (default) print a single 3-column table with all 20 irreps.
-        If ``True`` split the 20 irreps into two groups of 10 and print them
-        side by side as a 6-column table.
+        If ``False`` (default) print a single 3-column table with all the irreps.
+        If ``True`` split the irreps into two halves (10 and 10 for H(4), 13 and 12
+        for the honeycomb group) and print them side by side as a 6-column table.
+    group : str, LatticeGroup or None
+        Lattice group: None (default) or ``'H4'`` for H(4), ``'honeycomb'`` for W(F₄).
     """
+    group = get_group(group)
     V = (4, 1)
-    starting_irreps = [(1, 1), (1, 4), (4, 1), (4, 4), (6, 1)]
-    n_irreps = len(rep_label_list)
+    # the irreps of the Dirac structures S, P, V, A, T
+    starting_irreps = [_DIRAC_IRREP[X] for X in _X_ORDER]
+    n_irreps = group.n_rep
+    rep_latex_names = group.rep_latex_names
 
     def _count_at_level(k: int) -> list[int]:
         c = [0] * n_irreps
         for si in starting_irreps:
-            mults = get_multiplicities(*(si,) + (V,) * k)
+            mults = group.multiplicities(*(si,) + (V,) * k)
             for i in range(n_irreps):
                 c[i] += mults[i]
         return c
@@ -2160,7 +2281,7 @@ def irrep_count_table(n_der: int, split: bool = False) -> None:
             print(f"{label:<{col_w}} {counts[i]:>5}  {_diff_str(diff[i]):>5}")
         print(sep)
     else:
-        half = n_irreps // 2
+        half = (n_irreps + 1) // 2  # with an odd number of irreps the left column has one more
         gap = "    "
         col_block = f"{'Label':<{col_w}} {'Count':>5}  {'Diff':>5}"
         header = col_block + gap + col_block
@@ -2172,15 +2293,23 @@ def irrep_count_table(n_der: int, split: bool = False) -> None:
             left = row
             right = row + half
             l_label, l_count, l_diff = rep_latex_names[left], counts[left], diff[left]
-            r_label, r_count, r_diff = rep_latex_names[right], counts[right], diff[right]
             left_col = f"{l_label:<{col_w}} {l_count:>5}  {_diff_str(l_diff):>5}"
-            right_col = f"{r_label:<{col_w}} {r_count:>5}  {_diff_str(r_diff):>5}"
-            print(left_col + gap + right_col)
+            if right < n_irreps:
+                r_label, r_count, r_diff = rep_latex_names[right], counts[right], diff[right]
+                right_col = f"{r_label:<{col_w}} {r_count:>5}  {_diff_str(r_diff):>5}"
+            else:
+                right_col = ""
+            print((left_col + gap + right_col).rstrip())
         print(sep)
 
 
 def decomposition_analysis(
-    X: str, n_der: int, operator_dict: dict | None = None, verbose: bool = False, print_count_table: bool = False
+    X: str,
+    n_der: int,
+    operator_dict: dict | None = None,
+    verbose: bool = False,
+    print_count_table: bool = False,
+    group: str | LatticeGroup | None = None,
 ):
     """Analyse the irrep content of the tensor product irrep(X) ⊗ (4,1)^{n_der}.
 
@@ -2202,13 +2331,15 @@ def decomposition_analysis(
         Number of derivative indices (≥ 0; without derivatives the product is the
         leading irrep alone, which is always mixing-safe).
     operator_dict : dict or None
-        If provided (output of ``OperatorDict_from_database``), also reports
-        the index-symmetry of the operators.
+        If provided (output of ``OperatorDict_from_database``, for the same group),
+        also reports the index-symmetry of the operators.
     verbose : bool
         Print the analysis table to stdout.
     print_count_table : bool
         If True, call :func:`irrep_count_table` with the default (3-column)
         layout after printing the analysis.
+    group : str, LatticeGroup or None
+        Lattice group: None (default) or ``'H4'`` for H(4), ``'honeycomb'`` for W(F₄).
 
     Returns
     -------
@@ -2221,10 +2352,11 @@ def decomposition_analysis(
     if isinstance(n_der, bool) or not isinstance(n_der, int) or n_der < 0:
         raise ValueError("n_der must be a non-negative integer.")
 
+    group = get_group(group)
     product = _operator_irreps(X, n_der)
 
     available_irreps = {
-        rep_label_list[i]: ["Y", mul, "-"] for i, mul in enumerate(get_multiplicities(*product)) if mul > 0
+        group.rep_label_list[i]: ["Y", mul, "-"] for i, mul in enumerate(group.multiplicities(*product)) if mul > 0
     }
 
     # For each lower-dimensional product of any starting structure, check whether
@@ -2232,9 +2364,9 @@ def decomposition_analysis(
     # possible and we flag it as not mixing-safe.
     for i_dim in range(n_der):
         for X_low in _X_ORDER:
-            low_dim_irrep = get_multiplicities(*_operator_irreps(X_low, i_dim))
+            low_dim_irrep = group.multiplicities(*_operator_irreps(X_low, i_dim))
             for key in available_irreps:
-                if low_dim_irrep[irrep_index[key]] > 0:
+                if low_dim_irrep[group.irrep_index[key]] > 0:
                     available_irreps[key][0] = "N"
 
     if operator_dict is not None:
@@ -2257,7 +2389,7 @@ def decomposition_analysis(
         print("\n".join("|" + "|".join(row.split("|")[2:]) for row in df.to_markdown().split("\n")))
 
     if print_count_table:
-        irrep_count_table(n_der)
+        irrep_count_table(n_der, group=group)
 
     return df
 
@@ -2350,6 +2482,7 @@ def _catalogue_selection(
     X: str | Iterable[str] | None = None,
     nder: int | Iterable[int] | None = None,
     keys: str | Iterable[str] | None = None,
+    group: str | LatticeGroup | None = None,
 ) -> tuple[list[tuple[str, int]], str, str]:
     """Parse the operator selection of :func:`operator_show`.
 
@@ -2369,6 +2502,10 @@ def _catalogue_selection(
     keys : str or iterable of str, optional
         Keys ``'<X><nder>'``; a string may hold several, separated by commas or
         spaces.  Cannot be combined with *X* or *nder*.
+    group : str, LatticeGroup or None, optional
+        Lattice group of the operators.  For a group other than H(4) the title names it
+        and the file name holds the group name, e.g.
+        ``'operator_catalogue_honeycomb_SPVAT_nder012'``; for H(4) they are as above.
 
     Returns
     -------
@@ -2414,7 +2551,20 @@ def _catalogue_selection(
         title = "Available Operators: " + "; ".join(f"{x} with {_derivatives_text(ds)}" for x, ds in per_X.items())
         name = "operator_catalogue_" + "_".join(f"{x}{d}" for x, d in selection)
 
+    group = get_group(group)
+    if group.name != 'H4':
+        # The title is set in LaTeX by pdflatex, which does not know the character ₄: write F4.
+        title = title.replace(
+            "Available Operators", f"Available Operators of the {group.name} group {_ascii_title(group)}"
+        )
+        name = name.replace("operator_catalogue", f"operator_catalogue{group.operator_file_suffix}", 1)
+
     return selection, title, name
+
+
+def _ascii_title(group: LatticeGroup) -> str:
+    """The name of *group* in plain ASCII, for LaTeX documents: 'H(4)', 'W(F4)'."""
+    return group.title.replace('₄', '4')
 
 
 def _kfactor_worker(cgmat: np.ndarray, X: str, gamma_pol_index: int) -> sym.Expr:
@@ -2524,14 +2674,16 @@ def operator_show(
     nder: int | Iterable[int] | None = None,
     keys: str | Iterable[str] | None = None,
     n_jobs: int | None = 1,
+    group: str | LatticeGroup | None = None,
 ) -> Path:
     """Produce a PDF catalogue of a selection of the operators in *operator_database*
     and, optionally, open it on screen.
 
     The catalogue is organised by Dirac structure *X* and index count *n*.
     Each section covers one (X, n) combination; each subsection covers one
-    H(4) irrep / multiplicity block and lists every operator with its
-    symbolic expression and kinematic factor.
+    irrep / multiplicity block (of H(4), or of the honeycomb group with
+    ``group='honeycomb'``) and lists every operator with its symbolic expression
+    and kinematic factor.
 
     By default the operators of every Dirac structure (S, P, V, A, T) with zero, one
     and two derivatives are written (IDs 1–336 of the bundled database); the
@@ -2549,7 +2701,7 @@ def operator_show(
     operator_database : str, optional
         Path to an operator database directory produced by
         :func:`make_operator_database`.  When *None* the bundled dataset
-        shipped with the package is used.
+        shipped with the package (that of *group*) is used.
     title : str, optional
         Title printed on the first page of the PDF.  Defaults to a string
         stating the selected operators, e.g.
@@ -2560,7 +2712,8 @@ def operator_show(
         Path (without extension) of the generated ``.tex`` / ``.pdf``
         files; its folder must exist.  Defaults to a name stating the selected
         operators, in the working directory: ``"operator_catalogue_SPVAT_nder012"``
-        by default, ``"operator_catalogue_V2_V3_A3"`` for ``keys=["V2", "V3", "A3"]``.
+        by default, ``"operator_catalogue_V2_V3_A3"`` for ``keys=["V2", "V3", "A3"]``,
+        and ``"operator_catalogue_honeycomb_SPVAT_nder012"`` for the honeycomb group.
     verbose : bool, optional
         Print the selection, progress bars over the operators and progress
         messages to stdout (default ``True``).
@@ -2591,6 +2744,11 @@ def operator_show(
         process; ``None`` uses all CPU cores).  The result does not depend on it.
         In a script, call ``operator_show`` with ``n_jobs > 1`` under
         ``if __name__ == "__main__":``, as usual with multiprocessing.
+    group : str, LatticeGroup or None, optional (keyword only)
+        Lattice group of the operators: ``'H4'`` or ``'honeycomb'``.  Without
+        *operator_database* it selects the bundled database (default: H(4)); with it,
+        the group is that of the operators of the database (checked against *group* if
+        given).
 
     Returns
     -------
@@ -2610,6 +2768,7 @@ def operator_show(
     >>> operator_show(X="V", nder=[1, 2, 3], show=False)         # vector operators with 1 to 3 derivatives
     >>> operator_show(nder=0, show=False)                        # the local bilinears ψ̄ Γ ψ
     >>> operator_show(keys=["V2", "V3", "A3"], n_jobs=None, show=False)  # a selection, on all cores
+    >>> operator_show(group="honeycomb", show=False)             # the operators of the honeycomb group
     """
 
     # pylatex is an optional dependency; raise a helpful error if missing
@@ -2617,13 +2776,9 @@ def operator_show(
         raise ImportError("pylatex is required for operator_show(). Install it with: pip install pylatex")
     start = time.time()
 
-    # The selected (X, number of derivatives) groups, and the default title / file name
-    # that describe them.  This also validates X, nder and keys.
-    selection, default_title, default_name = _catalogue_selection(X=X, nder=nder, keys=keys)
-    if title is None:
-        title = default_title
-    if doc_name is None:
-        doc_name = default_name
+    # The selected (X, number of derivatives) groups.  This also validates X, nder and keys
+    # (and the group, if given) before anything is loaded.
+    selection, _, _ = _catalogue_selection(X=X, nder=nder, keys=keys, group=group)
 
     # Number of processes for the kinematic factors: None means all CPU cores.
     if n_jobs is None:
@@ -2632,9 +2787,21 @@ def operator_show(
         raise ValueError(f"n_jobs must be a positive integer or None, got {n_jobs!r}.")
 
     # Build the nested operators dict from the chosen (or default) database.
-    # OperatorDict_from_database falls back to _BUNDLED_OPERATOR_DATABASE when
+    # OperatorDict_from_database falls back to the bundled database of the group when
     # operator_database is None, so no special-casing is needed here.
-    operators_dict = OperatorDict_from_database(operator_database)
+    operators_dict = OperatorDict_from_database(operator_database, group=group)
+
+    # The lattice group of the operators (read from the file names of the database), which
+    # the default title and file name state.
+    database_groups = {op.group for blocks in operators_dict.values() for ops in blocks.values() for op in ops}
+    if len(database_groups) > 1:
+        raise ValueError(f"The operator database mixes operators of the groups {', '.join(sorted(database_groups))}.")
+    lattice_group = get_group(group if group is not None or not database_groups else database_groups.pop())
+    _, default_title, default_name = _catalogue_selection(X=X, nder=nder, keys=keys, group=lattice_group)
+    if title is None:
+        title = default_title
+    if doc_name is None:
+        doc_name = default_name
 
     # The (n, X) groups of the database that belong to the selection.  The dict is filled
     # in order of increasing operator ID, so the sections keep the database order.
@@ -2798,8 +2965,9 @@ def write_operator(group, operator: Operator) -> None:
     """Serialise an Operator into an HDF5 group.
 
     Stores the ``cgmat`` as a compressed dataset and all scalar attributes
-    (``id``, ``X``, ``irrep``, ``block``, ``index_block``, ``gamma_pol_index``)
-    as group attributes.  None-valued attributes (``id``, ``irrep``, ``block``,
+    (``id``, ``X``, ``irrep``, ``block``, ``index_block``, ``gamma_pol_index``, and
+    the lattice group ``group`` as the attribute ``symmetry_group``) as group
+    attributes.  None-valued attributes (``id``, ``irrep``, ``block``,
     ``index_block`` can each legitimately be ``None`` — e.g. for operators
     produced by ``Operator.__add__``/``__sub__``) are recorded via a
     ``_is_none`` flag so that they can be correctly reconstructed by
@@ -2834,6 +3002,11 @@ def write_operator(group, operator: Operator) -> None:
     # the physical content of K, so it must round-trip along with cgmat.
     op_group.attrs["gamma_pol_index"] = operator.gamma_pol_index
 
+    # The lattice group ('H4' or 'honeycomb') tells which irrep the label irrep refers to.
+    # It is stored as "symmetry_group", not "group", so as not to be confused with the HDF5
+    # groups of the file.
+    op_group.attrs["symmetry_group"] = operator.group
+
     if operator.irrep is None:
         op_group.attrs["irrep_is_none"] = True
     else:
@@ -2852,6 +3025,10 @@ def write_operator(group, operator: Operator) -> None:
 
 def read_operator(group) -> Operator:
     """Reconstruct an Operator from an HDF5 group written by ``write_operator``.
+
+    Files written before the lattice group was stored have no ``symmetry_group``
+    attribute: their operators are read as operators of H(4), the only group h4lat
+    knew then.
 
     Parameters
     ----------
@@ -2888,6 +3065,11 @@ def read_operator(group) -> Operator:
     kwargs: dict = {}
     if "gamma_pol_index" in op_group.attrs:
         kwargs["gamma_pol_index"] = int(op_group.attrs["gamma_pol_index"])
+    # The same for the lattice group: files written before it was stored hold H(4)
+    # operators, the only ones h4lat had, which is the Operator default.
+    if "symmetry_group" in op_group.attrs:
+        group_name = op_group.attrs["symmetry_group"]
+        kwargs["group"] = group_name.decode() if isinstance(group_name, bytes) else str(group_name)
 
     return Operator(
         cgmat=np.array(op_group["cgmat"]),
@@ -2973,10 +3155,14 @@ def h5_to_operator_list(file_path: str) -> list[Operator]:
 if __name__ == "__main__":
     # Default to max_nder=3, matching the bundled operator database shipped with the package.
     # Override by passing an integer as the first CLI argument: python moments_operator.py 2
+    # The second argument is the lattice group (default H4): python moments_operator.py 3 honeycomb
     max_nder = 3
     if len(sys.argv) > 1:
         try:
             max_nder = int(sys.argv[1])
         except ValueError:
             print(f"\nSpecified max_nder was {sys.argv[1]}, proceeding with max_nder={max_nder}\n")
-    make_operator_database(operator_folder="operator_database", max_nder=max_nder, verbose=True)
+    lattice_group = get_group(sys.argv[2] if len(sys.argv) > 2 else None)
+    make_operator_database(
+        operator_folder=lattice_group.operator_database_folder, max_nder=max_nder, verbose=True, group=lattice_group
+    )

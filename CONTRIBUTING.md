@@ -28,9 +28,10 @@ pip install pre-commit && pre-commit install          # format and lint at every
 ## Tests and code style
 
 ```bash
-python -m pytest                              # whole suite, about 4 minutes
-python -m pytest -k "not symbolic_sum"        # skips the slowest test (about 2 of the 4 minutes)
+python -m pytest                              # whole suite, about 5 minutes
+python -m pytest -k "not symbolic_sum"        # skips the slowest test (about 2 of the 5 minutes)
 python -m pytest tests/test_cg_correctness.py # after any change to the generators, the CG algorithm or the data
+python -m pytest tests/test_honeycomb.py      # the honeycomb group against the tables of arXiv:2611.21543
 pre-commit run --all-files                    # black + ruff, configured in pyproject.toml
 ```
 
@@ -44,9 +45,10 @@ obvious. The code should be readable by someone who knows neither the libraries 
 ## Things that are easy to break
 
 - **The bundled data** (`src/h4lat/data/`) are never edited by hand. They are regenerated with
-  `python scripts/regenerate_data.py {h4,cg,operators,all}`, which computes into `regenerated_data/`, copies
-  only the files whose content changed, and reports shifted operator IDs. When one stage changes, regenerate
-  every stage after it (H(4) matrices → CG coefficients → operators).
+  `python scripts/regenerate_data.py {elements,cg,operators,all} [--group honeycomb]`, which computes into
+  `regenerated_data/`, copies only the files whose content changed, and reports shifted operator IDs. When one
+  stage changes, regenerate every stage after it (group matrices → CG coefficients → operators). The honeycomb
+  group is built from the H(4) matrices: a change to the H(4) generators changes both groups.
 - **Operator IDs** are hard-coded in `get_op_selection` and `get_paper_operators`. Any change to the content or
   the order of the operator database must update them (use the shift report of `regenerate_data.py`), and the
   wiki must note the change for existing users (a dated note on the page concerned, e.g. "Operator database").
@@ -121,6 +123,6 @@ is nothing to bump.
 Publishing the release runs `.github/workflows/publish.yml`. The workflow checks that the tag matches the
 version, builds the package, uploads it to [PyPI](https://pypi.org/project/h4lat/) and attaches it to the
 release. Zenodo archives the release and gives it a DOI. At the same time `.github/workflows/catalogue.yml` writes
-the PDF catalogue of the whole operator database (`h4lat-catalogue --nder 0 1 2 3`) with the code of the release and
-attaches it to the release, a few minutes later. To add or replace the catalogue of an existing release, run that
+the PDF catalogues of the whole operator databases (`h4lat-catalogue --nder 0 1 2 3`, and the same with
+`--group honeycomb`) with the code of the release and attaches them to the release, a few minutes later. To add or replace the catalogue of an existing release, run that
 workflow by hand: *Actions → catalogue → Run workflow*, with the tag of the release (e.g. `v0.3.0`).

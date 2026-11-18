@@ -1,9 +1,12 @@
-*Theory, part 1 of 3.* Next: [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients) ·
-[Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators)
+*Theory, part 1 of 4.* Next: [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients) ·
+[Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators) ·
+[The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)
 
 This page introduces the hypercubic group $`{H(4)}`$, its irreducible representations and how they combine in tensor
 products. Throughout the wiki, the irrep written $`{\tau^{(k)}_l}`$ in the literature is the label `(k, l)` in the code:
-for example, $`{\tau^{(4)}_1}`$ is `(4, 1)`.
+for example, $`{\tau^{(4)}_1}`$ is `(4, 1)`. $`{H(4)}`$ is the default group of h4lat; the larger symmetry group of the
+16-cell honeycomb lattice, which contains it, is the subject of
+[The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group).
 
 ## Elements of H(4)
 
