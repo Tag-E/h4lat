@@ -153,8 +153,22 @@ The support for the 16-cell honeycomb lattice follows S. Katz and D. Nogradi,
 labels of its irreps and the tables against which it is tested. The character table of that group was computed with
 [GAP](https://www.gap-system.org) (The GAP Group, *GAP – Groups, Algorithms, and Programming*).
 
-This library was developed with the assistance of [Claude](https://www.anthropic.com/claude)
-(Anthropic), an AI assistant, which helped with code generation, testing, and documentation.
+---
+
+## Disclaimer
+
+h4lat has not been peer-reviewed. Its documentation (this README, the wiki and the docstrings), and much of its code
+and tests, were written with agentic AI tools ([Claude Code](https://www.anthropic.com/claude), by Anthropic) under
+the direction of the author: these tools are what make it possible for one person to develop, maintain and distribute
+a package of this size.
+
+The methods and conventions come from peer-reviewed papers and, for the 16-cell honeycomb group, a recent preprint
+(see the [References](https://github.com/Tag-E/h4lat/wiki/References)), and the test suite checks the results
+against them: the group matrices against the generator relations and character tables, the Clebsch-Gordan
+coefficients against the group action, and the honeycomb group and its operators against the tables of
+arXiv:2611.21543. Still, as with any work that has not been reviewed by the scientific community, h4lat may contain
+mistakes, in the explanations as well as in the code: check the results you rely on, and please report anything
+that looks wrong as a [GitHub issue](https://github.com/Tag-E/h4lat/issues).
 
 ---
 
