@@ -148,10 +148,26 @@ development install, run the tests and edit the wiki, and
 
 ## Acknowledgements
 
-The support for the 16-cell honeycomb lattice follows S. Katz and D. Nogradi,
-[*Hadron structure on the 16-cell honeycomb*](https://arxiv.org/abs/2611.21543) (arXiv:2611.21543), for the group, the
-labels of its irreps and the tables against which it is tested. The character table of that group was computed with
-[GAP](https://www.gap-system.org) (The GAP Group, *GAP – Groups, Algorithms, and Programming*).
+h4lat is built on the following works (also listed, with the others used in the documentation, on the wiki page
+[References](https://github.com/Tag-E/h4lat/wiki/References)):
+
+* The Clebsch-Gordan coefficients are computed with the projection formula of I. Sakata,
+  [*A general method for obtaining Clebsch-Gordan coefficients of finite groups. I. Its application to point and
+  space groups*](https://doi.org/10.1063/1.1666528), J. Math. Phys. **15**, 1702–1709 (1974).
+* The notation of H(4) (the generators α, β, γ and the irreps τ⁽ᵏ⁾ₗ) follows M. Baake, B. Gemünden and
+  R. Oedingen, [*Structure and representations of the symmetry group of the four-dimensional
+  cube*](https://doi.org/10.1063/1.525461), J. Math. Phys. **23**, 944–953 (1982); Erratum: J. Math. Phys. **23**,
+  2595 (1982), and M. Göckeler, R. Horsley, E.-M. Ilgenfritz, H. Perlt, P. E. L. Rakow, G. Schierholz and
+  A. Schiller, [*Lattice operators for moments of the structure functions and their transformation under the
+  hypercubic group*](https://doi.org/10.1103/PhysRevD.54.5705), Phys. Rev. D **54**, 5705–5714 (1996),
+  [arXiv:hep-lat/9602029](https://arxiv.org/abs/hep-lat/9602029). The generator matrices and the character table of
+  H(4) are those of Baake et al. (with one correction, explained on the wiki page
+  [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group#generators)), and the
+  classification of the operators under H(4) and C-parity is that of Göckeler et al.
+* The support for the 16-cell honeycomb lattice follows the preprint of S. Katz and D. Nogradi,
+  [*Hadron structure on the 16-cell honeycomb*](https://arxiv.org/abs/2611.21543) (arXiv:2611.21543), for the group,
+  the labels of its irreps and the tables against which it is tested. The character table of that group was computed
+  with [GAP](https://www.gap-system.org) (The GAP Group, *GAP – Groups, Algorithms, and Programming*).
 
 ---
 
@@ -162,13 +178,13 @@ and tests, were written with agentic AI tools ([Claude Code](https://www.anthrop
 the direction of the author: these tools are what make it possible for one person to develop, maintain and distribute
 a package of this size.
 
-The methods and conventions come from peer-reviewed papers and, for the 16-cell honeycomb group, a recent preprint
-(see the [References](https://github.com/Tag-E/h4lat/wiki/References)), and the test suite checks the results
-against them: the group matrices against the generator relations and character tables, the Clebsch-Gordan
-coefficients against the group action, and the honeycomb group and its operators against the tables of
-arXiv:2611.21543. Still, as with any work that has not been reviewed by the scientific community, h4lat may contain
-mistakes, in the explanations as well as in the code: check the results you rely on, and please report anything
-that looks wrong as a [GitHub issue](https://github.com/Tag-E/h4lat/issues).
+The group theory, the methods and the conventions of h4lat come from published papers and preprints (see the
+Acknowledgements above), and the test suite checks the code against them: the matrices of the group elements against
+the generator relations and the character tables, and the decompositions of the tensor products and the operators
+against the tables and expressions of those works. It also checks that the Clebsch-Gordan coefficients transform as
+they must under the group. Still, as with any work that has not been reviewed by the scientific community, h4lat may
+contain mistakes, in the explanations as well as in the code: check the results you rely on, and please report
+anything that looks wrong as a [GitHub issue](https://github.com/Tag-E/h4lat/issues).
 
 ---
 
