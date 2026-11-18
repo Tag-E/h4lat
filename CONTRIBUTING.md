@@ -49,9 +49,11 @@ obvious. The code should be readable by someone who knows neither the libraries 
   `regenerated_data/`, copies only the files whose content changed, and reports shifted operator IDs. When one
   stage changes, regenerate every stage after it (group matrices → CG coefficients → operators). The honeycomb
   group is built from the H(4) matrices: a change to the H(4) generators changes both groups.
-- **Operator IDs** are hard-coded in `get_op_selection` and `get_paper_operators`. Any change to the content or
-  the order of the operator database must update them (use the shift report of `regenerate_data.py`), and the
-  wiki must note the change for existing users (a dated note on the page concerned, e.g. "Operator database").
+- **Operator IDs** are hard-coded in `get_op_selection` and `get_paper_operators`: IDs of the H(4) database, and
+  of the honeycomb one for the operators read with `Operator_from_database(id, group="honeycomb")`. Any change to
+  the content or the order of an operator database must update them (use the shift report of
+  `regenerate_data.py`), and the wiki must note the change for existing users (a dated note on the page concerned,
+  e.g. "Operator database").
 - **`examples/paper_operators.ipynb`** shows the source of `get_paper_operators`, and a test checks that they
   match. Edit both together, and keep the operator tables inside their `# fmt: off` / `# fmt: on` region.
 - **New public names** must be imported in `src/h4lat/__init__.py` and listed in `__all__`.

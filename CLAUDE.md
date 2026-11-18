@@ -157,8 +157,10 @@ H(4), rest-frame channels) are those checked by `tests/test_honeycomb.py`.
   det·(4,1), (6,1) = Λ² in the `_SIGMA_PAIRS` order (so `_DIRAC_IRREP`, `cg_remapping*`, K and C-parity are shared
   by both groups); the honeycomb char-table column order. `tests/data/honeycomb_reference.json` holds the paper's
   tables used by `tests/test_honeycomb.py`.
-- `get_op_selection` and `get_paper_operators` **hard-code bundled-DB operator IDs** (H(4) database only). Any change to the ordering or
-  content of the operator database shifts them. Fix them using the shift report from `regenerate_data.py`.
+- `get_op_selection` and `get_paper_operators` **hard-code bundled-DB operator IDs**: those of the H(4) database,
+  except the paper `"Katz:2026qmx"`, which reads the honeycomb one with `Operator_from_database(id, group="honeycomb")`
+  (keep this exact spelling: `regenerate_data.py` finds the IDs with a regex). Any change to the ordering or content
+  of an operator database shifts them. Fix them using the shift report from `regenerate_data.py --group …`.
 - `examples/paper_operators.ipynb` shows the source of `get_paper_operators`, and
   `test_paper_operators_notebook_code` checks that every ```` ```python ```` block in its markdown cells is a
   line-by-line slice of the function (indentation ignored). Edit both together.

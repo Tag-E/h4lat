@@ -306,7 +306,9 @@ def report_operator_changes(old_folder, new_folder, group):
     structure, irrep, copy and component, read from the file name), which identifies an operator
     also when its ID changes.  The log states the operators added and removed, those whose tensor
     changed, and how the IDs of the others moved.  The IDs hard-coded in get_op_selection and
-    get_paper_operators refer to the H(4) database: they are checked only for *group* H(4).
+    get_paper_operators refer to the H(4) database, except those read with
+    Operator_from_database(ID, group="honeycomb"), which refer to the honeycomb one: only the IDs
+    of the database of *group* are checked.
     """
     from h4lat import get_op_selection, get_paper_operators
 
@@ -371,9 +373,15 @@ def report_operator_changes(old_folder, new_folder, group):
 
     statuses = {i: status(i) for i in sorted(old.keys() | new.keys())}
 
-    for function in (get_op_selection, get_paper_operators) if group.name == "H4" else ():
+    for function in (get_op_selection, get_paper_operators):
         source = inspect.getsource(function)
-        used = sorted({int(i) for i in re.findall(r"Operator_from_database\((\d+)\)", source)})
+        # Operator_from_database(ID) reads the H(4) database, Operator_from_database(ID, group="honeycomb") that of
+        # the honeycomb group: findall gives the pairs (ID, group name), with an empty name for H(4)
+        calls = re.findall(r'Operator_from_database\((\d+)(?:, group="(\w+)")?\)', source)
+        used = sorted({int(i) for i, name in calls if (name or "H4") == group.name})
+        if not used:
+            # no ID of this function refers to the database of this group
+            continue
         affected = [i for i in used if statuses.get(i) != "unchanged"]
         if not affected:
             log.info("operators: the %d IDs used by %s are unchanged", len(used), function.__name__)
