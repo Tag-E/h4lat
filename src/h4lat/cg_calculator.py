@@ -993,7 +993,14 @@ class cg_calc:
     @property
     def raw_cg(self) -> dict[tuple[int, int], np.ndarray]:
         """
-        Raw symbolic CG blocks {(irep, m): block}, from which CGmat_from_block derives cg_dict.
+        Raw symbolic CG blocks {(irep, m): block}: the output of the projection formula, with
+        the free symbols A[i, j] still in it.
+
+        CGmat_from_block turns a raw block into the numerical CG matrix of one copy of the irrep.
+        A new computation no longer goes through them: cg_calc builds cg_dict directly from the
+        numerical coefficients of the projection, with the same result to the last bit, and builds
+        the raw blocks only to store them (save_raw).  They are still what prescription_changed
+        re-uses, and what the tests compare the numerical route with.
 
         For a product loaded from a database they are read from '{product}_raw/' on first
         access (they can be large: unpickling the symbolic expressions takes seconds).  They

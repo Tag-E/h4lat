@@ -58,7 +58,7 @@ mixing); the README is a short overview that links to it.
   (A = triality, paper eq. 3.2), the classes, and the 25 irreps (R, det R, Λ²R explicit; the others from the
   `_RECIPE` table by projection + Gram-Schmidt; entries snapped to exact rational/±√rational).
 
-### Three-stage bundled data pipeline (`src/h4lat/data/`, tracked in git, ~12 000 `.npy` files)
+### Three-stage bundled data pipeline (`src/h4lat/data/`, tracked in git, ~11 000 `.npy` files)
 
 Each stage is derived from the previous one, for each group. When a stage's input changes, regenerate that stage and
 every stage after it (the honeycomb data derive from the H(4) generators too):
@@ -193,9 +193,10 @@ H(4), rest-frame channels) are those checked by `tests/test_honeycomb.py`.
   publish a GitHub release with tag `vX.Y.Z`. `.github/workflows/publish.yml` checks that the tag matches
   `pyproject.toml` and uploads to PyPI (Trusted Publishing), and Zenodo archives the release.
   `.github/workflows/catalogue.yml` (on release, or by hand with a tag) installs LaTeX on the runner, runs
-  `h4lat-catalogue --nder 0 1 2 3` and attaches `operator_catalogue_SPVAT_nder0123.pdf` to the release; the wiki page
-  `Operator-catalogue` links to that file on the latest release, so keep its name.
-  `.github/workflows/tests.yml` runs pre-commit and pytest (Python 3.11–3.14) on every push and PR.
+  `h4lat-catalogue --nder 0 1 2 3` and the same with `--group honeycomb`, and attaches
+  `operator_catalogue_SPVAT_nder0123.pdf` and `operator_catalogue_honeycomb_SPVAT_nder0123.pdf` to the release; the
+  wiki page `Operator-catalogue` links to both files on the latest release, so keep their names.
+  `.github/workflows/tests.yml` runs pre-commit and pytest (Python 3.11–3.14) on every push to `main` and every PR.
   `.github/dependabot.yml` opens monthly grouped PRs for the GitHub Actions and the pre-commit hook revs, but not
   for the Python dependencies, which are unpinned (handling them: CONTRIBUTING.md, "Dependency updates").
 - `h4lat-catalogue` writes `operator_catalogue_*.pdf` to the working directory (gitignored). `*.ipynb` files are

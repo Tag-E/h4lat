@@ -15,7 +15,7 @@ This wiki is the documentation of h4lat: a user guide, the group theory behind t
 | understand the group theory and the method | [The hypercubic group](https://github.com/Tag-E/h4lat/wiki/The-hypercubic-group) → [Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Clebsch-Gordan-coefficients) → [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators) |
 | work on the 16-cell honeycomb lattice | [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group) |
 | decompose tensor products and get Clebsch-Gordan coefficients | [Computing Clebsch-Gordan coefficients](https://github.com/Tag-E/h4lat/wiki/Computing-Clebsch-Gordan-coefficients) |
-| use the 1360 bundled operators | [Operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database) and [Building operators](https://github.com/Tag-E/h4lat/wiki/Building-operators) |
+| use the 1360 bundled operators (of each group) | [Operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database) and [Building operators](https://github.com/Tag-E/h4lat/wiki/Building-operators) |
 | browse the operators in a PDF | [Operator catalogue](https://github.com/Tag-E/h4lat/wiki/Operator-catalogue) |
 | reproduce the operators of a published paper | [Operators from the literature](https://github.com/Tag-E/h4lat/wiki/Operators-from-the-literature) |
 | save a selection of operators | [Saving and loading operators](https://github.com/Tag-E/h4lat/wiki/Saving-and-loading-operators) |
