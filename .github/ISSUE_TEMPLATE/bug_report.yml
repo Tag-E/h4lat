@@ -33,7 +33,7 @@ body:
     attributes:
       label: h4lat version
       description: Output of `python -c "import h4lat; print(h4lat.__version__)"`
-      placeholder: "0.2.0"
+      placeholder: "0.4.0"
     validations:
       required: true
   - type: input

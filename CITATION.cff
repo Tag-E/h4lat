@@ -6,7 +6,7 @@
 cff-version: 1.2.0
 message: "If you use h4lat in your research, please cite it as below."
 type: software
-title: "h4lat: Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4)"
+title: "h4lat: Clebsch-Gordan coefficients and lattice operators for the hypercubic group H(4) and the 16-cell honeycomb group W(F4)"
 abstract: >-
   h4lat computes Clebsch-Gordan coefficients of the hypercubic group H(4) and builds H(4)-irreducible lattice
   operators ψ̄ Γ D⋯D ψ (Γ = 𝟙, γ₅, γ_μ, γ_μγ₅, σ_μν) for moments of parton distribution functions, together with
@@ -19,8 +19,8 @@ authors:
     orcid: "https://orcid.org/0009-0000-0406-5985"
     affiliation: "Forschungszentrum Jülich"
     email: emilio.taggi@gmail.com
-version: 0.3.0
-date-released: "2026-11-02"
+version: 0.4.0
+date-released: "2026-11-19"
 doi: 10.5281/zenodo.23598681
 license: GPL-3.0-or-later
 repository-code: "https://github.com/Tag-E/h4lat"

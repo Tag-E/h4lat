@@ -53,7 +53,7 @@ pip install "h4lat[full]"           # all the optional features (PDF catalogue, 
 h4lat needs Python ≥ 3.11. To install a given release, or the latest code, directly from GitHub:
 
 ```bash
-pip install "h4lat @ git+https://github.com/Tag-E/h4lat.git@v0.3.0"   # release 0.3.0
+pip install "h4lat @ git+https://github.com/Tag-E/h4lat.git@v0.4.0"   # release 0.4.0
 pip install "h4lat[full] @ git+https://github.com/Tag-E/h4lat.git"    # latest code on main
 ```
 
@@ -120,9 +120,9 @@ since operator IDs and conventions can change between versions (see the
 ```bibtex
 @software{Taggi_h4lat,
   author  = {Taggi, Emilio},
-  title   = {{h4lat}: {C}lebsch-{G}ordan coefficients and lattice operators for the hypercubic group {H(4)}},
+  title   = {{h4lat}: {C}lebsch-{G}ordan coefficients and lattice operators for the hypercubic group {H(4)} and the 16-cell honeycomb group {W(F$_4$)}},
   year    = {2026},
-  version = {0.3.0},
+  version = {0.4.0},
   doi     = {10.5281/zenodo.23598681},
   url     = {https://github.com/Tag-E/h4lat}
 }
