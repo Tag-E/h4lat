@@ -58,8 +58,8 @@ honeycomb group also have the catalogue of its database,
 
 If you have no LaTeX installation, the
 [`operator_catalogue.ipynb`](https://github.com/Tag-E/h4lat/blob/main/examples/operator_catalogue.ipynb) notebook
-also shows the most relevant operators (V, A and T with one and two derivatives), and its `show_group` function lists
-any other group.
+also shows the most relevant operators of $`{H(4)}`$ (V, A and T with one and two derivatives), and its `show_group`
+function lists any other selection of them (a Dirac structure and a number of derivatives).
 
 ## Exact kinematic factors
 

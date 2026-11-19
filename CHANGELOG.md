@@ -23,29 +23,48 @@ Changes marked **Breaking** can change the results or the code of existing users
   irreps (`operator_database_honeycomb/`), with the same ID ranges per Dirac structure and number of derivatives.
 - `Operator.group` (`'H4'` or `'honeycomb'`). It is stored in the file names of the honeycomb operators (ending in
   `_honeycomb`) and in HDF5 files (attribute `symmetry_group`); files without it are read as H(4) operators.
+  Operators of different groups cannot be added or subtracted (`ValueError`: the same label is a different irrep in
+  the other group). With `group=…`, the database loaders and `operator_show` refuse a folder that holds operators of
+  another group, and `operator_show` refuses a database that mixes groups.
+- New attributes of `cg_calc`: `group` (its `LatticeGroup`), `n_ele` (the order of the group), `group_mat` and
+  `ele_folder` (the matrices of the group elements and their folder). The instance attributes `rep_label_list`,
+  `irrep_index`, … hold the values of the group of the instance; the class attributes stay those of H(4).
 - `h4lat-catalogue --group honeycomb` and `scripts/regenerate_data.py --group honeycomb`; the release workflow also
-  attaches `operator_catalogue_honeycomb_SPVAT_nder0123.pdf`.
+  attaches `operator_catalogue_honeycomb_SPVAT_nder0123.pdf`. `python -m h4lat.moments_operator 3 honeycomb` builds
+  the honeycomb operator database (the second argument is the group, H(4) by default).
 - `cg_calc(save_raw=…)`: whether to build and save the raw symbolic blocks (default: True for H(4), False for the
-  honeycomb group).
+  honeycomb group). Without them, `raw_cg` and `prescription_changed` cannot be used for the computed product.
 - Wiki page "The 16-cell honeycomb group", and the notebook `examples/honeycomb.ipynb`.
 - `get_paper_operators`: the operators of Katz and Nogradi (2026), `"Katz:2026qmx"`, for the moments v₂, v₃, v₄, a₁,
   a₂, d₂ and d₃ in a nucleon at rest (eqs. 7.20, 8.12 and 9.17 of arXiv:2611.21543). They are the first operators of
-  the honeycomb group in `get_paper_operators`, built from its bundled database (`group="honeycomb"`).
+  the honeycomb group in `get_paper_operators`, built from its bundled database (`group="honeycomb"`). The twist-3
+  operators O^5_(2) and O^5_(3) combine copies of their irrep with opposite C-parities, to match the expressions of
+  the paper: their `C` is `'mixed'` and their `block` is `None`.
 - `scripts/regenerate_data.py --group honeycomb` reports the changes at the honeycomb operator IDs used in
   `get_paper_operators`, as it already did for the H(4) IDs.
 
 ### Changed
 
-- `h4lat-catalogue -j 0` is now an error: the number of processes must be positive, as for
+- **Breaking:** `h4lat-catalogue -j 0` is now an error: the number of processes must be positive, as for
   `operator_show(n_jobs=…)`. It used to mean all cores, which was not documented; `-j` alone still uses all cores.
 - `cg_calc` extracts the CG blocks directly from the numerical coefficients of the projection, without the symbolic
   raw blocks, with the same result to the last bit. Without the raw blocks (`save_raw=False`) the H(4) product
   (6,1) ⊗ (4,1)³ takes about 15 s on 12 cores (35 s serially) instead of about 80 s.
-- `cg_calc(force_h4gen=…)` is now called `force_group_gen` (it regenerates the matrices of either group);
-  `force_h4gen` still works, with a `DeprecationWarning`. `cg_calc.h4_mat` is now also `cg_calc.group_mat`: one
-  read-only array of shape (number of elements, d, d) per irrep (`h4_mat[ir][e]` still is the matrix of element `e`).
-- An irrep that the group does not have (in `cg_calc`, `get_multiplicities`, `Operator`) raises a `ValueError`
-  that lists the irreps of the group, instead of a `KeyError`.
+- **Breaking:** `cg_calc.h4_mat` is now also `cg_calc.group_mat`: one read-only array of shape
+  (number of elements, d, d) per irrep, instead of a list of 384 arrays. `h4_mat[ir][e]` still is the matrix of
+  element `e`, now always of shape (d, d), also (1, 1) for the 1-dim irreps. `h4_ele_folder` is now a read-only
+  alias of `ele_folder`, and the intermediate attributes `s4_mat` and `start` are no longer set.
+- **Breaking:** an irrep that the group does not have raises a `ValueError` that lists the irreps of the group: in
+  `cg_calc`, `get_multiplicities` and `latex_print_multiplicities`, where it used to be a `KeyError`, and in
+  `Operator`, which did not check its irrep before (it now also stores it as a tuple of integers).
+- `char_table` (in `h4lat` and `h4lat.cg_calculator`) is the character table of `get_group('H4')`, and is read-only.
+- `scripts/regenerate_data.py`: the first stage is called `elements`, since it builds the matrices of either group;
+  `h4` still works.
+
+### Deprecated
+
+- `cg_calc(force_h4gen=…)`: use `force_group_gen`, which regenerates the matrices of the elements of either group.
+  `force_h4gen` still works, with a `DeprecationWarning`.
 
 ### Fixed
 

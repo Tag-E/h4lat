@@ -28,7 +28,7 @@ hypercubic group, `'honeycomb'` for the group of the 16-cell honeycomb lattice.
 | `get_group`, `LatticeGroup`, `AVAILABLE_GROUPS` | The lattice groups: `get_group("honeycomb")` describes $`{W(F_4)}`$ (irrep labels, character table, …), `get_group()` $`{H(4)}`$ ([theory](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)) |
 | `rep_label_list`, `rep_dim_list`, `n_rep` | The 20 irrep labels `(k, l)` of $`{H(4)}`$, their dimensions, and their number (the same attributes of `get_group(group)` hold those of any group) |
 | `irrep_index`, `irrep_dim`, `irrep_texname` | Position in `rep_label_list`, dimension and LaTeX name of an irrep label |
-| `char_table`, `class_orders` | The character table (irreps × classes) and the number of elements of each class |
+| `char_table`, `class_orders` | The character table of $`{H(4)}`$ (irreps × classes, read-only) and the number of elements of each class |
 | `n_ele_h4`, `n_ele_s4` | The orders of $`{H(4)}`$ (384) and $`{S_4}`$ (24) |
 
 ## Operators
@@ -41,7 +41,7 @@ hypercubic group, `'honeycomb'` for the group of the 16-cell honeycomb lattice.
 | `OperatorList_from_database`, `OperatorDict_from_database` | The same as the getters, for any database folder |
 | `Operator_from_file` | One operator from its `.npy` file |
 | `make_operator_database` | Builds an operator database with up to a given number of derivatives |
-| `OPERATOR_DATABASE` | The path of the bundled operator database |
+| `OPERATOR_DATABASE` | The path of the bundled operator database of $`{H(4)}`$ (`get_group(group).operator_database_folder` is the folder name of the database of any group) |
 | `operator_show` | Writes a PDF catalogue of the operators ([guide](https://github.com/Tag-E/h4lat/wiki/Operator-catalogue)) |
 | `get_paper_operators`, `AVAILABLE_PAPERS` | Operators used in published works ([guide](https://github.com/Tag-E/h4lat/wiki/Operators-from-the-literature)) |
 | `get_op_selection` | A curated selection of operators free of mixing, for one to three derivatives |

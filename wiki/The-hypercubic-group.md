@@ -3,10 +3,11 @@
 [The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group)
 
 This page introduces the hypercubic group $`{H(4)}`$, its irreducible representations and how they combine in tensor
-products. Throughout the wiki, the irrep written $`{\tau^{(k)}_l}`$ in the literature is the label `(k, l)` in the code:
-for example, $`{\tau^{(4)}_1}`$ is `(4, 1)`. $`{H(4)}`$ is the default group of h4lat; the larger symmetry group of the
-16-cell honeycomb lattice, which contains it, is the subject of
-[The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group).
+products. Throughout the wiki, the irrep of $`{H(4)}`$ written $`{\tau^{(k)}_l}`$ in the literature is the label `(k, l)`
+in the code: for example, $`{\tau^{(4)}_1}`$ is `(4, 1)`. $`{H(4)}`$ is the default group of h4lat; the larger symmetry
+group of the 16-cell honeycomb lattice, which contains it, is the subject of
+[The 16-cell honeycomb group](https://github.com/Tag-E/h4lat/wiki/The-16-cell-honeycomb-group). Its irreps are written
+$`{\varrho^{(k)}_l}`$, with labels `(k, l)` of the same form: a label only has a meaning together with its group.
 
 ## Elements of H(4)
 

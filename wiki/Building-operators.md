@@ -1,5 +1,6 @@
-An `Operator` is one $`{H(4)}`$-irreducible lattice operator $`{\bar\psi \, \Gamma \, D \cdots D \, \psi}`$, given by its
-Dirac structure and its Clebsch-Gordan coefficients. The physics is explained on the theory page
+An `Operator` is one irreducible lattice operator $`{\bar\psi \, \Gamma \, D \cdots D \, \psi}`$, given by its
+Dirac structure and its Clebsch-Gordan coefficients. It transforms in an irrep of the hypercubic group $`{H(4)}`$ (the
+default) or of the 16-cell honeycomb group $`{W(F_4)}`$ (`group='honeycomb'`). The physics is explained on the theory page
 [Lattice operators](https://github.com/Tag-E/h4lat/wiki/Lattice-operators). Most of the time you will load operators
 from the bundled [operator database](https://github.com/Tag-E/h4lat/wiki/Operator-database); this page shows how to
 build one by hand and what it contains.
