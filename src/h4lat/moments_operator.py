@@ -1598,8 +1598,9 @@ def get_op_selection(n_der: int) -> list[Operator]:
     -------
     list[Operator]
         Ordered list: [opV1, opV2, ..., opA1, opA2, ..., opT1, opT2, ...]
-        For n_der=3 the list is [opV, opA, opT1, opT2, opT1p, opT2p].
-        Each operator's ``id`` is set to its label ("V1", "A2", "T1'", ...).
+        For n_der=3 the list is [opV, opA, opT1_a, opT2_a, opT1_b, opT2_b];
+        the sums opT1_a + opT1_b and opT2_a + opT2_b are traceless.
+        Each operator's ``id`` is set to its label ("V1", "A2", "T1_b", ...).
 
     Raises
     ------
@@ -1705,10 +1706,11 @@ def get_op_selection(n_der: int) -> list[Operator]:
 
         # Tensor - irrep (4,2) - C=+1
         # Kinematic factor K != 0
-        opT1 = Operator_from_database(1017) + 2*Operator_from_database(1021) # 2 x 1,a,b,1,c + 1,a,1,b,c  + 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
-        opT2 = Operator_from_database(1018) + 2*Operator_from_database(1022) # 2 x 2,a,b,2,c + 2,a,2,b,c  + 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
-        opT1p = Operator_from_database(1025) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(2,3,4) )
-        opT2p = Operator_from_database(1026) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(1,3,4) )
+        # opT1 = Operator_from_database(1017) + 2*Operator_from_database(1021) # 2 x 1,a,b,1,c + 1,a,1,b,c  + 1,a,b,c,1 ( a,b,c summed over Permutations(2,3,4) )
+        # opT2 = Operator_from_database(1018) + 2*Operator_from_database(1022) # 2 x 2,a,b,2,c + 2,a,2,b,c  + 2,a,b,c,2 ( a,b,c summed over Permutations(1,3,4) )
+        # opT1p = Operator_from_database(1025) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(2,3,4) )
+        # opT2p = Operator_from_database(1026) # a,b,a,a,c + a,b,c,a,a ( a,b,c summed over Permutations(1,3,4) )
+
         # (opT1 - opT1p) is traceless (not counting the renormalization mixing)
         # (opT2 - opT2p) is traceless (not counting the renormalization mixing)
         # the operators opT3, opT4, opT3p, opT4p have K proportional to px-py, so they cannot be used with our dataset
@@ -1725,15 +1727,23 @@ def get_op_selection(n_der: int) -> list[Operator]:
         # opT1p_K0.id = "T1'_K0"
         # opT2p_K0.id = "T2'_K0"
 
-        # Set custom labels (p stands for prime)
+        # Tensor - irrep (4,2) - C=+1 - chosen combinations that can be arranged into traceless and trace parts (not counting the renormalization mixing)
+        # (opT1_a + opT1_b) is traceless (not counting the renormalization mixing)
+        # (opT2_a + opT2_b) is traceless (not counting the renormalization mixing)
+        opT1_a = 2 * ( Operator_from_database(1017) + Operator_from_database(1021) ) #   2 x (1,a,b,1,c + 1,a,1,b,c + 1,a,b,c,1) ( a,b,c summed over Permutations(2,3,4) )
+        opT2_a = 2 * ( Operator_from_database(1018) + Operator_from_database(1022) ) #   2 x (2,a,b,2,c + 2,a,2,b,c + 2,a,b,c,2) ( a,b,c summed over Permutations(1,3,4) )
+        opT1_b = -( Operator_from_database(1025) + Operator_from_database(1029) )    # - (a,b,a,a,c + a,b,c,a,a + a,b,a,c,a)     ( a,b,c summed over Permutations(2,3,4) )
+        opT2_b = -( Operator_from_database(1026) + Operator_from_database(1030) )    # - (a,b,a,a,c + a,b,c,a,a + a,b,a,c,a)     ( a,b,c summed over Permutations(1,3,4) )
+
+        # Set custom labels
         opV.id = "V"
         opA.id = "A"
-        opT1.id = "T1"
-        opT2.id = "T2"
-        opT1p.id = "T1'"
-        opT2p.id = "T2'"
+        opT1_a.id = "T1_a"
+        opT2_a.id = "T2_a"
+        opT1_b.id = "T1_b"
+        opT2_b.id = "T2_b"
 
-        return [opV, opA, opT1, opT2, opT1p, opT2p]
+        return [opV, opA, opT1_a, opT2_a, opT1_b, opT2_b]
     # fmt: on
 
     raise ValueError(f"n_der must be 1, 2, or 3, got {n_der}.")

@@ -7,6 +7,12 @@ Changes marked **Breaking** can change the results or the code of existing users
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `get_op_selection(3)`: the four (4,2) tensors with C = +1 are now `T1_a`, `T2_a` (derivatives
+  completely symmetrised) and `T1_b`, `T2_b`, in place of `T1`, `T2`, `T1'`, `T2'`. The traceless combinations are
+  now the sums `T1_a + T1_b` and `T2_a + T2_b`.
+
 ## [0.4.0] - 2026-11-19
 
 ### Added
