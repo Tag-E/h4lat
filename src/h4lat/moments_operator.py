@@ -19,7 +19,7 @@
 #########################################################################
 
 """
-moments_operator.py — lattice moments operators built from H(4) CG coefficients.
+moments_operator.py — lattice moments operators built from the CG coefficients of H(4) or W(F₄).
 
 An ``Operator`` object represents a single irreducible lattice operator of the form
 
@@ -29,14 +29,19 @@ where Γ^X is the Dirac structure (V: γ_μ, A: γ_μ γ₅, T: σ_{μν}, S: �
 are Clebsch-Gordan coefficients stored in ``cgmat``, and the derivatives D are
 left minus right acting covariant derivatives.
 
+The CG coefficients are those of the lattice symmetry group: the hypercubic group H(4), the
+default, or the group W(F₄) of the 16-cell honeycomb lattice, selected with ``group='honeycomb'``
+(``Operator.group`` says which).  Each group has its own bundled operator database.
+
 The kinematic factor K(p, m) is the ratio of the tree-level three-point correlator
 to its kinematic prefactor, allowing lattice matrix elements to be normalised to
 physical parton distribution moments.  The class computes K symbolically via SymPy
 and caches the result.
 
-Reference:
+References:
     Göckeler et al., Phys. Rev. D 54, 5705 (1996), arXiv:hep-lat/9602029.
     https://doi.org/10.1103/PhysRevD.54.5705
+    S. Katz and D. Nogradi (2026), arXiv:2611.21543 (the 16-cell honeycomb lattice and W(F₄)).
 """
 
 import functools
@@ -332,14 +337,12 @@ class Operator:
 
     @functools.cached_property
     def latex_K(self) -> str:
-        """LaTeX string of the kinematic factor K."""
-        latex_K = str(self.K).replace('**', '^').replace('*', '').replace('I', 'i')
-        # K is exact, so square roots of the CG coefficients (e.g. 1/√2 in some
-        # get_paper_operators operators) appear as sqrt(2): write them as \sqrt{2}.
-        latex_K = re.sub(r"sqrt\((\d+)\)", r"\\sqrt{\1}", latex_K)
-        if '/' in latex_K:
-            latex_K = "\\frac{" + latex_K.split('/')[0] + "}{ " + latex_K.split('/')[1] + "}"
-        return latex_K
+        """LaTeX string of the kinematic factor K, written as one fraction \\frac{…}{…} if K has a denominator.
+
+        See ``_latex_kinematic_factor``: every term of K is kept, also when the numerator of K
+        holds fractions of its own (as for some operators with three derivatives).
+        """
+        return _latex_kinematic_factor(self.K)
 
     # ------------------------------------------------------------------
     # String representations
@@ -2214,6 +2217,91 @@ def get_paper_operators(paper: str | None = None, doi: str | None = None) -> lis
 
         return [opv2a, opv2b, opv3, opv4, opa0, opa2, opd2]
     # fmt: on
+
+
+def _K_text_to_latex(text: str) -> str:
+    """Turn SymPy's plain-text form of (a part of) a kinematic factor into LaTeX.
+
+    ``str()`` of a SymPy expression writes products with ``*``, powers with ``**``, the
+    imaginary unit as ``I`` and square roots as ``sqrt(n)``, e.g. ``I*sqrt(2)*E(p)*p_1**2``.
+    They are rewritten for LaTeX: ``**`` → ``^``, ``*`` dropped (in LaTeX a product is written
+    by juxtaposition), ``I`` → ``i`` and ``sqrt(n)`` → ``\\sqrt{n}``, which gives
+    ``i\\sqrt{2}E(p)p_1^2``.  The symbol names (``E(p)``, ``m_N``, ``p_1``, … of kinematic_data)
+    are already valid LaTeX.  A '/' is left as it is: fractions are handled by
+    ``_latex_kinematic_factor``, which calls this function.
+
+    Parameters
+    ----------
+    text : str
+        ``str()`` of a SymPy expression in the kinematic symbols.
+
+    Returns
+    -------
+    str
+    """
+    # '**' must be replaced before '*', otherwise p_1**2 would become p_12.
+    latex = text.replace('**', '^').replace('*', '').replace('I', 'i')
+    # K is exact, so square roots of the CG coefficients (e.g. 1/√2 in some
+    # get_paper_operators operators) appear as sqrt(2): write them as \sqrt{2}.
+    return re.sub(r"sqrt\((\d+)\)", r"\\sqrt{\1}", latex)
+
+
+def _latex_kinematic_factor(K: sym.Expr) -> str:
+    """LaTeX string of the kinematic factor *K*, the value of ``Operator.latex_K``.
+
+    If K has a denominator, the string is one fraction ``\\frac{numerator}{ denominator}``.
+
+    SymPy prints a product with a denominator as ``numerator/denominator``, e.g.
+    ``I*(3*m_N**2 + 4*p_1**2)/(6*E(p))``, and cutting this string at its '/' gives the two parts
+    of the fraction.  That is right only if the string has a single '/', the fraction bar of K
+    itself.  The numerator of some K with three derivatives holds fractions of its own, e.g.
+    ``(-E(p)*m_N**3/2 - E(p)*m_N*p_1**2 - … - m_N**4/2 - …)/(E(p)*(E(p) + m_N))``: cutting that
+    string at its first '/' and dropping everything after the second gave a truncated LaTeX
+    string, with unbalanced parentheses and most of the terms of K missing.  Such a K is first
+    rewritten as a single fraction with ``sympy.together``, which puts all its terms over a
+    common denominator (here 2E(p)(E(p) + m_N)); ``sympy.fraction`` then returns its numerator
+    and denominator, which are formatted separately.  No string is cut, so no term is lost.
+
+    A K printed with at most one '/', its own fraction bar, is formatted as before (by cutting
+    at the '/'), so the strings of these kinematic factors, almost all of them, do not change.
+
+    Parameters
+    ----------
+    K : sympy.Expr
+        Kinematic factor, as returned by ``Kfactor_from_diracO``.
+
+    Returns
+    -------
+    str
+        For example ``\\frac{i(3m_N^2 + 4p_1^2)}{ (6E(p))}``, ``\\sqrt{2}p_1`` or ``0``.
+    """
+    text = str(K)
+    n_slashes = text.count('/')
+    # sympy.fraction(K) splits K into numerator and denominator *without rewriting it*: it only
+    # collects the factors of K with a negative power (and the denominator of a rational
+    # coefficient).  If it finds a denominator ≠ 1, K is a product, power or number that SymPy
+    # prints as "numerator/denominator", with that '/' at the top level of the string (or, for a
+    # power like E(p)**(-2), without any '/').  So when the string has a single '/', it is the
+    # fraction bar of K.  For a sum, fraction returns (K, 1): a '/' in the string of a sum belongs
+    # to one of its terms, and cutting the string there would be wrong.
+    if n_slashes == 0 or (n_slashes == 1 and sym.fraction(K)[1] != 1):
+        # No '/' at all, or a single '/' that is the fraction bar of K: cutting the string at the
+        # '/' gives the numerator and the denominator of K.  This is the original formatting, kept
+        # as it is (with SymPy's parentheses, e.g. "{ (6E(p))}") so that these strings do not change.
+        latex = _K_text_to_latex(text)
+        if n_slashes == 1:
+            numerator, denominator = latex.split('/')
+            latex = "\\frac{" + numerator + "}{ " + denominator + "}"
+        return latex
+
+    # Otherwise some '/' is inside the numerator (or the denominator) of K: put K over a common
+    # denominator first, e.g. sympy.together(a/2 + b) = (a + 2b)/2, and sympy.fraction then gives
+    # (a + 2b, 2).  The two parts are formatted separately and never cut, so even a '/' left
+    # inside one of them would only be printed as it is, without losing anything.
+    numerator, denominator = sym.fraction(sym.together(K))
+    if denominator == 1:
+        return _K_text_to_latex(str(numerator))
+    return "\\frac{" + _K_text_to_latex(str(numerator)) + "}{ " + _K_text_to_latex(str(denominator)) + "}"
 
 
 def latexO_from_diracO(operatorO: sym.core.add.Add, X: str) -> str:

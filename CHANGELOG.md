@@ -13,6 +13,14 @@ Changes marked **Breaking** can change the results or the code of existing users
   completely symmetrised) and `T1_b`, `T2_b`, in place of `T1`, `T2`, `T1'`, `T2'`. The traceless combinations are
   now the sums `T1_a + T1_b` and `T2_a + T2_b`.
 
+### Fixed
+
+- `Operator.latex_K` no longer drops terms of K when the numerator of K holds fractions. It cut `str(K)` at its
+  first two `/`, which gave a truncated LaTeX string for 11 operators with three derivatives: 465, 481 and 1087 of
+  the H(4) database, 465, 749, 874, 1027, 1078 and 1237 of the honeycomb database, and O_(3) and O⁵_(3) of
+  `get_paper_operators("Katz:2026qmx")` (the 0.4.0 operator catalogues show the truncated K of these operators).
+  The `latex_K` of all the other operators is unchanged.
+
 ## [0.4.0] - 2026-11-19
 
 ### Added

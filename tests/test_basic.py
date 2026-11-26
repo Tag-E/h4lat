@@ -52,6 +52,7 @@ from h4lat.moments_operator import (
     _catalogue_selection,
     _compute_kinematic_factors,
     _exact_number,
+    _latex_kinematic_factor,
     _open_with_default_viewer,
     trace_symm,
 )
@@ -1333,6 +1334,102 @@ def test_latex_K_with_square_roots():
     op = get_op_selection(1)[2]
     assert op.K == sym.sqrt(2) * p1
     assert op.latex_K == r"\sqrt{2}p_1"
+
+
+def _sympy_from_latex_K(latex: str) -> sym.Expr:
+    """Read a latex_K string back into a SymPy expression in the symbols of kinematic_data.
+
+    The checks below compare this with K itself, so they do not depend on the order in which SymPy
+    prints the terms.  The strings of latex_K are made of: at most one \\frac{numerator}{ denominator}
+    around the whole string, the symbols E(p), m_N, p_1, p_2, p_3, the imaginary unit i, \\sqrt{n},
+    ^ for powers, and products written without any sign.  Each symbol is replaced by a one-letter
+    name in parentheses, so that SymPy's parser can read the products as implicit multiplications.
+    """
+    from sympy.parsing.sympy_parser import (
+        convert_xor,
+        implicit_multiplication,
+        parse_expr,
+        standard_transformations,
+    )
+
+    fraction = re.fullmatch(r"\\frac\{(.*)\}\{ (.*)\}", latex)
+    text = f"({fraction[1]})/({fraction[2]})" if fraction else latex
+    for name, letter in (("E(p)", "E"), ("m_N", "M"), ("p_1", "X"), ("p_2", "Y"), ("p_3", "Z")):
+        text = text.replace(name, f"({letter})")
+    # \sqrt{n} → (sqrt(n)), then i → (I): neither "sqrt" nor the letters above contain an "i".
+    text = re.sub(r"\\sqrt\{(\d+)\}", r"(sqrt(\1))", text).replace("i", "(I)")
+    symbols = {"E": E, "M": mN, "X": p1, "Y": p2, "Z": p3, "I": I}
+    # implicit_multiplication reads ")(" and "2(" as products, convert_xor reads ^ as a power.
+    return parse_expr(
+        text, local_dict=symbols, transformations=standard_transformations + (implicit_multiplication, convert_xor)
+    )
+
+
+@pytest.mark.parametrize(
+    "paper_operator, operator_id, group",
+    [
+        ("O_(3)", None, None),  # the operators of get_paper_operators("Katz:2026qmx") ...
+        ("O^5_(3)", None, None),
+        (None, 465, "H4"),  # ... and of the two bundled databases, whose K holds fractions in its numerator
+        (None, 481, "H4"),
+        (None, 1087, "H4"),
+        (None, 749, "honeycomb"),
+    ],
+)
+def test_latex_K_keeps_every_term_of_K(paper_operator, operator_id, group):
+    """latex_K is K, also when K has several '/' (H4L-D16).
+
+    The numerator of these K holds fractions (e.g. -E(p)m_N³/2 - … - m_N⁴/2 - …).  latex_K used to cut
+    str(K) at its '/' and keep only the first two pieces, giving a truncated string with unbalanced
+    parentheses that lost most of the terms.
+    """
+    if paper_operator is not None:
+        op = next(op for op in get_paper_operators("Katz:2026qmx") if op.id == paper_operator)
+    else:
+        op = Operator_from_database(operator_id, group=group)
+    assert str(op.K).count("/") > 1  # the case that used to fail
+    assert sym.simplify(_sympy_from_latex_K(op.latex_K) - op.K) == 0
+    if paper_operator == "O_(3)":
+        # the string itself: numerator and denominator of K multiplied by 2, so that no fraction is left inside
+        assert op.latex_K == (
+            r"\frac{-E(p)m_N^3 - 2E(p)m_Np_1^2 - 2E(p)m_Np_2^2 - 2E(p)m_Np_3^2 - m_N^4 - 3m_N^2p_1^2 - 3m_N^2p_2^2"
+            r" - 3m_N^2p_3^2 - 2p_1^4 - 4p_1^2p_2^2 - 4p_1^2p_3^2 - 2p_2^4 - 4p_2^2p_3^2 - 2p_3^4}{ 2E(p)(E(p) + m_N)}"
+        )
+
+
+def test_latex_K_is_unchanged_for_a_single_fraction():
+    """A K printed with a single '/' (its fraction bar) keeps the latex_K string it had before H4L-D16."""
+    katz_O2 = get_paper_operators("Katz:2026qmx")[0]
+    expected = [
+        (Operator_from_database(65), r"\frac{-3p_2(E(p)m_N + m_N^2 + p_1^2 + p_2^2)}{ (2E(p)(E(p) + m_N))}"),
+        (Operator_from_database(26), r"\frac{i(-3m_N^2 - 4p_1^2 - 4p_2^2 - 4p_3^2)}{ E(p)}"),
+        (katz_O2, r"\frac{i(3m_N^2 + 4p_1^2 + 4p_2^2 + 4p_3^2)}{ (6E(p))}"),
+    ]
+    for op, latex in expected:
+        assert op.latex_K == latex, op.id
+        assert sym.simplify(_sympy_from_latex_K(op.latex_K) - op.K) == 0, op.id
+
+
+@pytest.mark.parametrize(
+    "K, latex",
+    [
+        # no '/', or a single '/' that is the fraction bar of K: formatted as before
+        (sym.S.Zero, "0"),
+        (sym.sqrt(2) * p1, r"\sqrt{2}p_1"),
+        (1 / E, r"\frac{1}{ E(p)}"),
+        (E**-2, "E(p)^(-2)"),  # SymPy prints it as E(p)**(-2), without '/'
+        (sym.Rational(1, 2), r"\frac{1}{ 2}"),
+        # a single '/' inside a sum or a factor: cutting the string there would be wrong,
+        # e.g. 1 + p_1/E(p) would have become \frac{1 + p_1}{ E(p)}
+        (1 + p1 / E, r"\frac{E(p) + p_1}{ E(p)}"),
+        (p1 / 2 + p2, r"\frac{p_1 + 2p_2}{ 2}"),
+        (I * (p1 / 2 + p2), r"\frac{i(p_1 + 2p_2)}{ 2}"),
+    ],
+)
+def test_latex_kinematic_factor_edge_cases(K, latex):
+    """_latex_kinematic_factor on small expressions, among them a '/' inside a sum (no bundled K has one)."""
+    assert _latex_kinematic_factor(K) == latex
+    assert sym.simplify(_sympy_from_latex_K(latex) - K) == 0
 
 
 def test_latex_conversion_table():

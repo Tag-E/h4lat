@@ -960,7 +960,10 @@ class cg_calc:
                     with open(f'{self._raw_folder}/{irep}_{m}.npy', 'wb') as f:
                         np.save(f, v)
 
-        elif Path(self.cg_folder).exists():
+        else:
+            # No need to check again that the folder exists: the `if` above takes both the case of a
+            # missing folder and that of force_computation, so here the folder exists and
+            # force_computation is False.  The coefficients are loaded from it.
 
             if verbose:
                 print("\nLoading the cg coefficients for the given tensor product from the database ...\n")
